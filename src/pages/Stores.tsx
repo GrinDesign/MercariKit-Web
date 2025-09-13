@@ -14,6 +14,18 @@ const Stores: React.FC = () => {
     prefecture: '',
     notes: ''
   });
+  
+  const [selectedRegion, setSelectedRegion] = useState('');
+
+  // 地方別都道府県データ
+  const regionPrefectures = {
+    '北海道・東北': ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県'],
+    '関東': ['茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県'],
+    '中部': ['新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県'],
+    '関西': ['三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県'],
+    '中国・四国': ['鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県'],
+    '九州・沖縄': ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県']
+  };
 
   useEffect(() => {
     fetchStores();
@@ -57,10 +69,21 @@ const Stores: React.FC = () => {
       setShowForm(false);
       setEditingStore(null);
       setFormData({ name: '', type: 'online', prefecture: '', notes: '' });
+      setSelectedRegion('');
       fetchStores();
     } catch (error) {
       console.error('Error saving store:', error);
     }
+  };
+
+  // 都道府県から地方を逆引きする関数
+  const getRegionByPrefecture = (prefecture: string) => {
+    for (const [region, prefectures] of Object.entries(regionPrefectures)) {
+      if (prefectures.includes(prefecture)) {
+        return region;
+      }
+    }
+    return '';
   };
 
   const handleEdit = (store: Store) => {
@@ -71,6 +94,8 @@ const Stores: React.FC = () => {
       prefecture: store.prefecture || '',
       notes: store.notes || ''
     });
+    // 既存の都道府県から地方を設定
+    setSelectedRegion(store.prefecture ? getRegionByPrefecture(store.prefecture) : '');
     setShowForm(true);
   };
 
@@ -112,6 +137,7 @@ const Stores: React.FC = () => {
             setShowForm(true);
             setEditingStore(null);
             setFormData({ name: '', type: 'online', prefecture: '', notes: '' });
+            setSelectedRegion('');
           }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-blue-700 transition-colors"
         >
@@ -160,12 +186,38 @@ const Stores: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   都道府県
                 </label>
-                <input
-                  type="text"
-                  value={formData.prefecture}
-                  onChange={(e) => setFormData({ ...formData, prefecture: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">地方</label>
+                    <select
+                      value={selectedRegion}
+                      onChange={(e) => {
+                        setSelectedRegion(e.target.value);
+                        setFormData({ ...formData, prefecture: '' }); // 都道府県をリセット
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      <option value="">地方を選択</option>
+                      {Object.keys(regionPrefectures).map((region) => (
+                        <option key={region} value={region}>{region}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">都道府県</label>
+                    <select
+                      value={formData.prefecture}
+                      onChange={(e) => setFormData({ ...formData, prefecture: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      disabled={!selectedRegion}
+                    >
+                      <option value="">都道府県を選択</option>
+                      {selectedRegion && regionPrefectures[selectedRegion as keyof typeof regionPrefectures]?.map((prefecture) => (
+                        <option key={prefecture} value={prefecture}>{prefecture}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
               
               <div className="mb-6">

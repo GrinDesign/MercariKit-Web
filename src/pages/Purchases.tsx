@@ -13,6 +13,7 @@ const Purchases: React.FC = () => {
   const [editingSession, setEditingSession] = useState<PurchaseSession | null>(null);
   const [sessionFormData, setSessionFormData] = useState({
     title: '',
+    session_date: format(new Date(), 'yyyy-MM-dd'),
     transportation_cost: 0,
     transfer_fee: 0,
     agency_fee: 0,
@@ -66,13 +67,10 @@ const Purchases: React.FC = () => {
         
         if (error) throw error;
       } else {
-        // 新規作成の場合 - session_dateは現在日付を自動設定
+        // 新規作成の場合
         const { error } = await supabase
           .from('purchase_sessions')
-          .insert([{
-            ...sessionFormData,
-            session_date: format(new Date(), 'yyyy-MM-dd')
-          }]);
+          .insert([sessionFormData]);
         
         if (error) throw error;
       }
@@ -81,14 +79,16 @@ const Purchases: React.FC = () => {
       setEditingSession(null);
       setSessionFormData({
         title: '',
+        session_date: format(new Date(), 'yyyy-MM-dd'),
         transportation_cost: 0,
         transfer_fee: 0,
         agency_fee: 0,
         status: 'active'
       });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving session:', error);
+      alert(`セッション保存エラー: ${error.message || '不明なエラーが発生しました'}`);
     }
   };
 
@@ -96,6 +96,7 @@ const Purchases: React.FC = () => {
     setEditingSession(session);
     setSessionFormData({
       title: session.title,
+      session_date: session.session_date,
       transportation_cost: session.transportation_cost || 0,
       transfer_fee: session.transfer_fee || 0,
       agency_fee: session.agency_fee || 0,
@@ -122,12 +123,12 @@ const Purchases: React.FC = () => {
 
   const getSessionStats = (sessionId: string) => {
     const purchases = storePurchases.filter(p => p.session_id === sessionId);
-    // total_amountカラムが削除されたため、個別に計算
+    // Calculate total amount using the correct field names from updated schema
     const totalAmount = purchases.reduce((sum, p) => {
-      const productAmount = (p as any).product_amount || 0;
-      const shippingCost = (p as any).shipping_cost || 0;
-      const commissionFee = (p as any).commission_fee || 0;
-      return sum + productAmount + shippingCost + commissionFee;
+      const productCost = p.product_cost || 0;
+      const shippingCost = p.shipping_cost || 0;
+      const commissionFee = p.commission_fee || 0;
+      return sum + productCost + shippingCost + commissionFee;
     }, 0);
     const totalItems = purchases.reduce((sum, p) => sum + (p.item_count || 0), 0);
     return { purchaseCount: purchases.length, totalAmount: totalAmount || 0, totalItems };
@@ -166,6 +167,19 @@ const Purchases: React.FC = () => {
                   onChange={(e) => setSessionFormData({ ...sessionFormData, title: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="例: 新宿仕入れ"
+                  required
+                />
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  仕入日 *
+                </label>
+                <input
+                  type="date"
+                  value={sessionFormData.session_date}
+                  onChange={(e) => setSessionFormData({ ...sessionFormData, session_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>

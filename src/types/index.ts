@@ -21,7 +21,9 @@ export interface StorePurchase {
   session_id: string;
   store_id: string;
   purchase_date: string;
-  total_amount: number;
+  product_cost: number;
+  shipping_cost: number;
+  commission_fee: number;
   item_count: number;
   payment_notes?: string;
   price_input_mode?: 'batch' | 'individual';
@@ -51,6 +53,7 @@ export interface Product {
   notes?: string;
   production_country?: string;
   decade?: string;
+  asset_type: 'asset' | 'quick_turn';
   status: 'in_stock' | 'ready_to_list' | 'listed' | 'sold' | 'on_hold' | 'discarded';
   shipping_method?: string;
   shipping_cost?: number;

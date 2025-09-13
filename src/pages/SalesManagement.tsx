@@ -9,12 +9,13 @@ const SalesManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('listed');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [modalType, setModalType] = useState<'edit' | 'sale' | 'hold' | 'discard' | null>(null);
+  const [modalType, setModalType] = useState<'edit' | 'sale' | 'hold' | 'discard' | 'edit_sold' | 'edit_hold' | 'edit_discard' | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [formData, setFormData] = useState({
     current_price: 0,
     mercari_title: '',
+    listed_at: '',
     sold_price: 0,
     sold_at: new Date().toISOString().split('T')[0],
     shipping_method: '',
@@ -57,18 +58,21 @@ const SalesManagement: React.FC = () => {
   const openModal = (type: typeof modalType, product: Product) => {
     setSelectedProduct(product);
     setModalType(type);
-    setFormData({
+    let initialFormData = {
       current_price: product.current_price || 0,
       mercari_title: product.mercari_title || '',
-      sold_price: product.current_price || 0,
-      sold_at: new Date().toISOString().split('T')[0],
+      listed_at: product.listed_at ? new Date(product.listed_at).toISOString().split('T')[0] : '',
+      sold_price: product.sold_price || product.current_price || 0,
+      sold_at: product.sold_at ? new Date(product.sold_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       shipping_method: product.shipping_method || '',
       shipping_cost: product.shipping_cost || 0,
-      hold_reason: '',
+      hold_reason: type === 'edit_hold' ? (product.notes || '') : '',
       held_at: new Date().toISOString().split('T')[0],
-      discard_reason: '',
-      discarded_at: new Date().toISOString().split('T')[0]
-    });
+      discard_reason: type === 'edit_discard' ? (product.notes || '') : '',
+      discarded_at: product.discarded_at ? new Date(product.discarded_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    };
+    
+    setFormData(initialFormData);
     setShowModal(true);
   };
 
@@ -89,7 +93,8 @@ const SalesManagement: React.FC = () => {
         case 'edit':
           updateData = {
             current_price: formData.current_price,
-            mercari_title: formData.mercari_title
+            mercari_title: formData.mercari_title,
+            listed_at: formData.listed_at ? new Date(formData.listed_at).toISOString() : null
           };
           break;
 
@@ -99,34 +104,66 @@ const SalesManagement: React.FC = () => {
             sold_price: formData.sold_price,
             sold_at: new Date(formData.sold_at).toISOString(),
             shipping_method: formData.shipping_method,
-            shipping_cost: formData.shipping_cost
+            shipping_cost: formData.shipping_cost,
+            platform_fee: Math.floor(formData.sold_price * 0.1) // 販売手数料10%
           };
           break;
 
         case 'hold':
           updateData = {
             status: 'on_hold',
-            hold_reason: formData.hold_reason,
-            held_at: new Date(formData.held_at).toISOString()
+            notes: formData.hold_reason, // hold_reasonフィールドがないのでnotesに保存
+            // held_at: new Date(formData.held_at).toISOString() // held_atフィールドがない場合はコメントアウト
           };
           break;
 
         case 'discard':
           updateData = {
             status: 'discarded',
-            discard_reason: formData.discard_reason,
+            notes: formData.discard_reason, // discard_reasonフィールドがないのでnotesに保存
+            discarded_at: new Date(formData.discarded_at).toISOString()
+          };
+          break;
+
+        case 'edit_sold':
+          updateData = {
+            sold_price: formData.sold_price,
+            sold_at: new Date(formData.sold_at).toISOString(),
+            shipping_method: formData.shipping_method,
+            shipping_cost: formData.shipping_cost,
+            platform_fee: Math.floor(formData.sold_price * 0.1) // 販売手数料10%
+          };
+          break;
+
+        case 'edit_hold':
+          updateData = {
+            notes: formData.hold_reason
+          };
+          break;
+
+        case 'edit_discard':
+          updateData = {
+            notes: formData.discard_reason,
             discarded_at: new Date(formData.discarded_at).toISOString()
           };
           break;
       }
+
+      console.log('Updating product with data:', updateData); // デバッグログ
 
       const { error } = await supabase
         .from('products')
         .update(updateData)
         .eq('id', selectedProduct.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        alert('更新に失敗しました: ' + error.message);
+        throw error;
+      }
 
+      console.log('Product updated successfully'); // デバッグログ
+      
       await fetchProducts();
       closeModal();
       setShowSuccessMessage(true);
@@ -134,6 +171,7 @@ const SalesManagement: React.FC = () => {
 
     } catch (error) {
       console.error('Error updating product:', error);
+      alert('エラーが発生しました。詳細はコンソールを確認してください。');
     }
   };
 
@@ -232,7 +270,7 @@ const SalesManagement: React.FC = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    商品名
+                    商品
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     現在価格
@@ -250,6 +288,19 @@ const SalesManagement: React.FC = () => {
                   <tr key={product.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
+                        <div className="flex-shrink-0 mr-3">
+                          {product.photos && product.photos.length > 0 ? (
+                            <img
+                              src={product.photos[0]}
+                              alt={product.name}
+                              className="w-12 h-12 rounded-lg object-cover bg-gray-200"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                              <Package size={20} className="text-gray-400" />
+                            </div>
+                          )}
+                        </div>
                         <div>
                           <div className="text-sm font-medium text-gray-900">
                             {product.name}
@@ -266,41 +317,82 @@ const SalesManagement: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(product.status)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                      <button
-                        onClick={() => openModal('edit', product)}
-                        className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="情報修正"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      {product.status === 'listed' && (
-                        <button
-                          onClick={() => openModal('sale', product)}
-                          className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-lg transition-colors"
-                          title="売却処理"
-                        >
-                          <DollarSign size={18} />
-                        </button>
-                      )}
-                      {(product.status === 'listed' || product.status === 'on_hold') && (
-                        <button
-                          onClick={() => openModal('hold', product)}
-                          className="p-2 text-orange-600 hover:text-orange-900 hover:bg-orange-50 rounded-lg transition-colors"
-                          title="保留処理"
-                        >
-                          <Pause size={18} />
-                        </button>
-                      )}
-                      {product.status !== 'sold' && product.status !== 'discarded' && (
-                        <button
-                          onClick={() => openModal('discard', product)}
-                          className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-lg transition-colors"
-                          title="廃棄処理"
-                        >
-                          <Ban size={18} />
-                        </button>
-                      )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-wrap gap-2">
+                        {/* 出品中の場合 */}
+                        {product.status === 'listed' && (
+                          <>
+                            <button
+                              onClick={() => openModal('edit', product)}
+                              className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                            >
+                              編集
+                            </button>
+                            <button
+                              onClick={() => openModal('sale', product)}
+                              className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                            >
+                              売却
+                            </button>
+                            <button
+                              onClick={() => openModal('hold', product)}
+                              className="px-3 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                            >
+                              保留
+                            </button>
+                            <button
+                              onClick={() => openModal('discard', product)}
+                              className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                            >
+                              廃棄
+                            </button>
+                          </>
+                        )}
+                        
+                        {/* 売却済みの場合 */}
+                        {product.status === 'sold' && (
+                          <button
+                            onClick={() => openModal('edit_sold', product)}
+                            className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                          >
+                            売却情報編集
+                          </button>
+                        )}
+                        
+                        {/* 保留中の場合 */}
+                        {product.status === 'on_hold' && (
+                          <>
+                            <button
+                              onClick={() => openModal('edit_hold', product)}
+                              className="px-3 py-1 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                            >
+                              保留情報編集
+                            </button>
+                            <button
+                              onClick={() => openModal('sale', product)}
+                              className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                            >
+                              売却
+                            </button>
+                            <button
+                              onClick={() => openModal('discard', product)}
+                              className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                            >
+                              廃棄
+                            </button>
+                          </>
+                        )}
+                        
+                        {/* 廃棄済みの場合 */}
+                        {product.status === 'discarded' && (
+                          <button
+                            onClick={() => openModal('edit_discard', product)}
+                            className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                          >
+                            廃棄情報編集
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -320,6 +412,9 @@ const SalesManagement: React.FC = () => {
                 {modalType === 'sale' && '売却処理'}
                 {modalType === 'hold' && '保留処理'}
                 {modalType === 'discard' && '廃棄処理'}
+                {modalType === 'edit_sold' && '売却情報編集'}
+                {modalType === 'edit_hold' && '保留情報編集'}
+                {modalType === 'edit_discard' && '廃棄情報編集'}
               </h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <X size={24} />
@@ -345,6 +440,15 @@ const SalesManagement: React.FC = () => {
                       type="text"
                       value={formData.mercari_title}
                       onChange={(e) => setFormData({ ...formData, mercari_title: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">出品日</label>
+                    <input
+                      type="date"
+                      value={formData.listed_at}
+                      onChange={(e) => setFormData({ ...formData, listed_at: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -433,6 +537,105 @@ const SalesManagement: React.FC = () => {
               )}
 
               {modalType === 'discard' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">廃棄理由</label>
+                    <textarea
+                      value={formData.discard_reason}
+                      onChange={(e) => setFormData({ ...formData, discard_reason: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                      placeholder="汚れ、破れ、その他の理由"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">廃棄日</label>
+                    <input
+                      type="date"
+                      value={formData.discarded_at}
+                      onChange={(e) => setFormData({ ...formData, discarded_at: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* 売却済み商品の編集 */}
+              {modalType === 'edit_sold' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">売却価格</label>
+                    <input
+                      type="number"
+                      value={formData.sold_price}
+                      onChange={(e) => setFormData({ ...formData, sold_price: parseInt(e.target.value) })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">売却日</label>
+                    <input
+                      type="date"
+                      value={formData.sold_at}
+                      onChange={(e) => setFormData({ ...formData, sold_at: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">発送方法</label>
+                    <select
+                      value={formData.shipping_method}
+                      onChange={(e) => {
+                        const selectedMethod = shippingMethods.find(m => m.value === e.target.value);
+                        setFormData({ 
+                          ...formData, 
+                          shipping_method: e.target.value,
+                          shipping_cost: selectedMethod?.cost || 0
+                        });
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">選択してください</option>
+                      {shippingMethods.map(method => (
+                        <option key={method.value} value={method.value}>{method.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">送料</label>
+                    <input
+                      type="number"
+                      value={formData.shipping_cost}
+                      onChange={(e) => setFormData({ ...formData, shipping_cost: parseInt(e.target.value) })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* 保留商品の編集 */}
+              {modalType === 'edit_hold' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">保留理由</label>
+                    <textarea
+                      value={formData.hold_reason}
+                      onChange={(e) => setFormData({ ...formData, hold_reason: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                      placeholder="季節的な理由、価格見直しなど"
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* 廃棄商品の編集 */}
+              {modalType === 'edit_discard' && (
                 <>
                   <div>
                     <label className="block text-sm font-medium mb-1">廃棄理由</label>
