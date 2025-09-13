@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Product, PurchaseSession, StorePurchase } from '../types';
-import { TrendingUp, Calendar, DollarSign, Package, PieChart, BarChart2, ChevronDown, ChevronRight, Database, AlertTriangle, Target, Brain, Filter, Zap, Settings, Check, X, Clock } from 'lucide-react';
+import { TrendingUp, Calendar, DollarSign, Package, PieChart, BarChart2, ChevronDown, ChevronRight, Database, AlertTriangle, Target, Brain, Filter, Zap, Settings, Check, X, Clock, Lightbulb } from 'lucide-react';
 
 interface MonthlyData {
   month: string;
@@ -191,6 +191,44 @@ interface AdvancedAnalyticsData {
   };
 }
 
+// 戦略分析機能の型定義
+interface StrategicAnalysisData {
+  sessionId: string;
+  sessionTitle: string;
+  totalItems: number;
+  soldItems: number;
+  remainingItems: number;
+  currentProfit: number;
+  targetProfit: number;  // 損益分岐点
+  requiredRevenue: number; // 必要売上額
+  remainingProducts: RemainingProduct[];
+}
+
+interface RemainingProduct {
+  id: string;
+  name: string;
+  category: string;
+  brand: string;
+  photos: string[];
+  purchaseCost: number;     // 仕入金額
+  allocatedCost: number;    // 按分後コスト
+  mercariReference?: number; // メルカリ相場
+  initialPrice: number;     // 出品時価格
+  currentPrice: number;     // 現在価格
+  suggestedPrice: number;   // 売却予想価格（編集可能）
+  status: string;
+  daysInStock: number;
+  shippingCost: number;     // 送料 (215, 750, 850)
+  platformFee: number;      // 販売手数料（10%）
+  netProfit: number;        // 純利益
+  breakEvenPrice: number;   // 損益分岐点価格
+  condition: string;
+  size?: string;
+  color?: string;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  recommendation: string;
+}
+
 // 自動価格調整機能のインターフェース
 interface PriceAdjustmentSuggestion {
   productId: string;
@@ -257,8 +295,11 @@ const Analytics: React.FC = () => {
     enabled: false
   });
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set());
+  const [strategicData, setStrategicData] = useState<StrategicAnalysisData[]>([]);
+  const [selectedStrategicSession, setSelectedStrategicSession] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [sessionTabs, setSessionTabs] = useState<{ [key: string]: 'details' | 'strategic' }>({});
   
   // 一括廃棄ツール用のstate
   const [sessions, setSessions] = useState<PurchaseSession[]>([]);
@@ -275,6 +316,7 @@ const Analytics: React.FC = () => {
       fetchMonthlyData();
     } else if (activeMenu === 'session') {
       fetchSessionData();
+      fetchStrategicData();
     } else if (activeMenu === 'store-analysis') {
       fetchStoreAnalysisData();
     } else if (activeMenu === 'inventory-optimization') {
@@ -474,6 +516,155 @@ const Analytics: React.FC = () => {
       setSessionData(sortedSessionData);
     } catch (error) {
       console.error('セッションデータ取得エラー:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStrategicData = async () => {
+    try {
+      setLoading(true);
+      
+      // セッションデータと関連する商品・購入データを取得
+      const [sessionsRes, purchasesRes, productsRes] = await Promise.all([
+        supabase.from('purchase_sessions').select('*').order('session_date', { ascending: false }),
+        supabase.from('store_purchases').select('*'),
+        supabase.from('products').select('*')
+      ]);
+
+      if (sessionsRes.error) throw sessionsRes.error;
+      if (purchasesRes.error) throw purchasesRes.error;
+      if (productsRes.error) throw productsRes.error;
+
+      const sessions = sessionsRes.data || [];
+      const storePurchases = purchasesRes.data || [];
+      const products = productsRes.data || [];
+
+      // セッションごとの戦略分析データを作成
+      const strategicAnalysis: StrategicAnalysisData[] = sessions.map(session => {
+        // セッションの店舗購入データを取得
+        const sessionStores = storePurchases.filter(sp => sp.session_id === session.id);
+        const storeIds = sessionStores.map(sp => sp.id);
+        
+        // セッションの商品データを取得
+        const sessionProducts = products.filter(p => 
+          p.store_purchase_id && storeIds.includes(p.store_purchase_id)
+        );
+
+        // 基本統計
+        const totalItems = sessionProducts.length;
+        const soldItems = sessionProducts.filter(p => p.status === 'sold').length;
+        const remainingItems = totalItems - soldItems;
+
+        // 現在の利益計算
+        const soldProducts = sessionProducts.filter(p => p.status === 'sold');
+        let currentRevenue = 0;
+        soldProducts.forEach(p => {
+          const soldPrice = p.sold_price || 0;
+          const platformFee = p.platform_fee || Math.floor(soldPrice * 0.1);
+          const shippingCost = p.shipping_cost || 0;
+          currentRevenue += (soldPrice - platformFee - shippingCost);
+        });
+
+        // 総コスト計算
+        const storeBasicAmount = sessionStores.reduce((sum, p) => {
+          const productAmount = (p as any).product_amount || 0;
+          const shippingCost = (p as any).shipping_cost || 0;
+          const commissionFee = (p as any).commission_fee || 0;
+          return sum + productAmount + shippingCost + commissionFee;
+        }, 0);
+        
+        const commonCost = (session.transportation_cost || 0) + 
+                          (session.transfer_fee || 0) + 
+                          (session.agency_fee || 0);
+        
+        const totalCost = storeBasicAmount + commonCost;
+
+        // 現在利益と目標利益
+        const currentProfit = currentRevenue - totalCost;
+        const targetProfit = 0; // 損益分岐点
+        const requiredRevenue = Math.max(0, totalCost - currentRevenue);
+
+        // 残存商品の詳細分析
+        const remainingProducts: RemainingProduct[] = sessionProducts
+          .filter(p => p.status !== 'sold' && p.status !== 'discarded')
+          .map(product => {
+            const allocatedCost = product.allocated_cost || product.purchase_cost || 0;
+            const currentPrice = product.current_price || product.initial_price || 0;
+            const suggestedPrice = currentPrice; // デフォルトは現在価格
+            
+            // 送料を商品サイズから推定（簡易版）
+            const shippingCost = currentPrice < 3000 ? 215 : currentPrice < 10000 ? 750 : 850;
+            const platformFee = Math.floor(suggestedPrice * 0.1);
+            const netProfit = suggestedPrice - platformFee - shippingCost - allocatedCost;
+            const breakEvenPrice = allocatedCost + platformFee + shippingCost;
+
+            // 在庫日数計算
+            const createdDate = new Date(product.created_at || new Date());
+            const now = new Date();
+            const daysInStock = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+
+            // リスクレベル判定
+            let riskLevel: 'low' | 'medium' | 'high' | 'critical';
+            let recommendation = '';
+            
+            if (daysInStock > 90) {
+              riskLevel = 'critical';
+              recommendation = '大幅値下げまたは廃棄検討';
+            } else if (daysInStock > 60) {
+              riskLevel = 'high';
+              recommendation = '値下げして早期売却を目指す';
+            } else if (daysInStock > 30) {
+              riskLevel = 'medium';
+              recommendation = '価格調整を検討';
+            } else {
+              riskLevel = 'low';
+              recommendation = '現状維持または様子見';
+            }
+
+            return {
+              id: product.id,
+              name: product.name,
+              category: product.category,
+              brand: product.brand || 'ノーブランド',
+              photos: product.photos || [],
+              purchaseCost: product.purchase_cost || 0,
+              allocatedCost,
+              mercariReference: 0, // TODO: 相場データ連携
+              initialPrice: product.initial_price || 0,
+              currentPrice,
+              suggestedPrice,
+              status: product.status,
+              daysInStock,
+              shippingCost,
+              platformFee,
+              netProfit,
+              breakEvenPrice,
+              condition: product.condition || '良好',
+              size: product.size,
+              color: product.color,
+              riskLevel,
+              recommendation
+            };
+          });
+
+        return {
+          sessionId: session.id,
+          sessionTitle: session.title,
+          totalItems,
+          soldItems,
+          remainingItems,
+          currentProfit,
+          targetProfit,
+          requiredRevenue,
+          remainingProducts
+        };
+      }).filter(data => data.remainingItems > 0); // 残存商品があるセッションのみ
+
+      setStrategicData(strategicAnalysis);
+      
+    } catch (error) {
+      console.error('戦略分析データ取得エラー:', error);
     } finally {
       setLoading(false);
     }
@@ -1328,6 +1519,47 @@ const Analytics: React.FC = () => {
     }
   };
 
+  // 価格調整ヘルパー関数
+  const updateSuggestedPrice = (sessionId: string, productId: string, newPrice: number) => {
+    setStrategicData(prevData => 
+      prevData.map(session => {
+        if (session.sessionId === sessionId) {
+          const updatedProducts = session.remainingProducts.map(product => {
+            if (product.id === productId) {
+              const suggestedPrice = newPrice;
+              const platformFee = Math.floor(suggestedPrice * 0.1);
+              const netProfit = suggestedPrice - platformFee - product.shippingCost - product.allocatedCost;
+              
+              return {
+                ...product,
+                suggestedPrice,
+                platformFee,
+                netProfit
+              };
+            }
+            return product;
+          });
+          
+          return {
+            ...session,
+            remainingProducts: updatedProducts
+          };
+        }
+        return session;
+      })
+    );
+  };
+
+  // シミュレーション用の利益計算
+  const calculateSimulatedProfit = (sessionData: StrategicAnalysisData): number => {
+    const totalSimulatedRevenue = sessionData.remainingProducts.reduce((sum, product) => {
+      const revenue = product.suggestedPrice - product.platformFee - product.shippingCost;
+      return sum + Math.max(0, revenue);
+    }, 0);
+    
+    return sessionData.currentProfit + totalSimulatedRevenue;
+  };
+
   const fetchBulkDiscardData = async () => {
     try {
       setLoading(true);
@@ -1454,7 +1686,7 @@ const Analytics: React.FC = () => {
 
   const menuItems = [
     { id: 'monthly', label: '月別集計', icon: Calendar },
-    { id: 'session', label: 'セッション別収益', icon: TrendingUp },
+    { id: 'session', label: 'セッション別分析', icon: TrendingUp },
     { id: 'store-analysis', label: '店舗別分析', icon: BarChart2 },
     { id: 'inventory-optimization', label: '在庫最適化', icon: AlertTriangle },
     { id: 'price-strategy', label: '価格戦略', icon: Target },
@@ -1722,11 +1954,38 @@ const Analytics: React.FC = () => {
                         
                         {/* 詳細展開部分 */}
                         {expandedSession === session.sessionId && (
-                          <div className="border-t border-gray-200 bg-gray-50 p-6">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                              {/* 費用内訳 */}
-                              <div className="bg-white rounded-lg p-4">
-                                <h4 className="font-semibold text-gray-700 mb-4 text-lg">費用内訳</h4>
+                          <div className="border-t border-gray-200 bg-gray-50">
+                            {/* タブヘッダー */}
+                            <div className="flex border-b border-gray-200 bg-white">
+                              <button
+                                onClick={() => setSessionTabs({ ...sessionTabs, [session.sessionId]: 'details' })}
+                                className={`px-6 py-3 text-sm font-medium transition-colors ${
+                                  (!sessionTabs[session.sessionId] || sessionTabs[session.sessionId] === 'details')
+                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                収益詳細
+                              </button>
+                              <button
+                                onClick={() => setSessionTabs({ ...sessionTabs, [session.sessionId]: 'strategic' })}
+                                className={`px-6 py-3 text-sm font-medium transition-colors ${
+                                  sessionTabs[session.sessionId] === 'strategic'
+                                    ? 'text-blue-600 border-b-2 border-blue-600'
+                                    : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                戦略的分析
+                              </button>
+                            </div>
+
+                            {/* タブコンテンツ */}
+                            {(!sessionTabs[session.sessionId] || sessionTabs[session.sessionId] === 'details') ? (
+                              <div className="p-6">
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                  {/* 費用内訳 */}
+                                  <div className="bg-white rounded-lg p-4">
+                                    <h4 className="font-semibold text-gray-700 mb-4 text-lg">費用内訳</h4>
                                 <div className="space-y-3">
                                   <div>
                                     <div className="flex justify-between items-center">
@@ -1804,6 +2063,135 @@ const Analytics: React.FC = () => {
                                 </div>
                               </div>
                             </div>
+                          </div>
+                        ) : (
+                          /* 戦略的分析タブ */
+                          <div className="p-6">
+                            {(() => {
+                              const strategicSession = strategicData.find(s => s.sessionId === session.sessionId);
+                              if (!strategicSession || strategicSession.remainingItems === 0) {
+                                return (
+                                  <div className="text-center py-8 text-gray-500">
+                                    <p>残存商品がないため、戦略的分析はありません。</p>
+                                  </div>
+                                );
+                              }
+
+                              const simulatedProfit = calculateSimulatedProfit(strategicSession);
+                              const profitImprovement = simulatedProfit - strategicSession.currentProfit;
+
+                              return (
+                                <div className="space-y-6">
+                                  {/* 利益シミュレーションサマリー */}
+                                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                                    <h3 className="text-lg font-semibold mb-4">利益最大化シミュレーション</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div className="text-center">
+                                        <div className="text-sm text-gray-500 mb-1">現在利益</div>
+                                        <div className={`text-xl font-bold ${strategicSession.currentProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {formatCurrency(strategicSession.currentProfit)}
+                                        </div>
+                                      </div>
+                                      <div className="text-center">
+                                        <div className="text-sm text-gray-500 mb-1">損益分岐まで</div>
+                                        <div className="text-xl font-bold text-orange-600">
+                                          {formatCurrency(strategicSession.requiredRevenue)}
+                                        </div>
+                                      </div>
+                                      <div className="text-center">
+                                        <div className="text-sm text-gray-500 mb-1">予想利益</div>
+                                        <div className={`text-xl font-bold ${simulatedProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {formatCurrency(simulatedProfit)}
+                                        </div>
+                                      </div>
+                                      <div className="text-center">
+                                        <div className="text-sm text-gray-500 mb-1">改善見込</div>
+                                        <div className={`text-xl font-bold ${profitImprovement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {profitImprovement >= 0 ? '+' : ''}{formatCurrency(profitImprovement)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* 残存商品一覧 */}
+                                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                    <div className="p-4 border-b border-gray-200">
+                                      <h3 className="text-lg font-semibold">残存商品の価格最適化</h3>
+                                      <p className="text-sm text-gray-600 mt-1">売却予想価格を調整して利益を最大化</p>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full">
+                                        <thead className="bg-gray-50">
+                                          <tr>
+                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">商品名</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">仕入</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">現在価格</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">予想価格</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">送料</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">手数料</th>
+                                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">予想利益</th>
+                                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">在庫日数</th>
+                                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">リスク</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                          {strategicSession.remainingProducts.map((product) => (
+                                            <tr key={product.id} className="hover:bg-gray-50">
+                                              <td className="px-3 py-3 whitespace-nowrap">
+                                                <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                                                <div className="text-xs text-gray-500">{product.category}</div>
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                                                {formatCurrency(product.purchaseCost)}
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
+                                                {formatCurrency(product.currentPrice)}
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-right">
+                                                <input
+                                                  type="number"
+                                                  value={product.suggestedPrice}
+                                                  onChange={(e) => updateSuggestedPrice(strategicSession.sessionId, product.id, parseInt(e.target.value) || 0)}
+                                                  className="w-16 px-1 py-1 text-sm border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                />
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-sm text-right text-red-600">
+                                                {formatCurrency(product.shippingCost)}
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-sm text-right text-red-600">
+                                                {formatCurrency(product.platformFee)}
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-sm text-right font-medium">
+                                                <span className={product.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                                  {formatCurrency(product.netProfit)}
+                                                </span>
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-center text-sm text-gray-900">
+                                                {product.daysInStock}日
+                                              </td>
+                                              <td className="px-3 py-3 whitespace-nowrap text-center">
+                                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                  product.riskLevel === 'low' ? 'bg-green-100 text-green-800' :
+                                                  product.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                                  product.riskLevel === 'high' ? 'bg-orange-100 text-orange-800' :
+                                                  'bg-red-100 text-red-800'
+                                                }`}>
+                                                  {product.riskLevel === 'low' ? '低' :
+                                                   product.riskLevel === 'medium' ? '中' :
+                                                   product.riskLevel === 'high' ? '高' : '重大'}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                           </div>
                         )}
                       </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Calendar, Package, ChevronRight, Filter, ChevronDown, ChevronUp, Store, TrendingUp } from 'lucide-react';
+import { Plus, Calendar, Package, ChevronRight, ChevronDown, ChevronUp, Store, ShoppingBag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { PurchaseSession, StorePurchase } from '../types/index';
 import { format } from 'date-fns';
@@ -15,19 +15,16 @@ interface SessionStats {
   discarded: number;
 }
 
-interface StoreAnalysis {
+interface StoreProductSummary {
   storeId: string;
   storeName: string;
-  purchaseAmount: number; // 仕入金額（経費込）
-  itemCount: number; // 仕入点数
-  discardedItems: number; // 破棄点数
-  listedItems: number; // 出品点数
-  soldItems: number; // 売却済
-  soldAmount: number; // 売却高
-  salesExpenses: number; // 売却経費（販売手数料・送料）
-  profit: number; // 利益
-  profitRate: number; // 利益率
-  roi: number; // ROI
+  totalItems: number;
+  inStock: number;
+  readyToList: number;
+  listed: number;
+  sold: number;
+  onHold: number;
+  discarded: number;
 }
 
 const ProductsHierarchy: React.FC = () => {
@@ -36,7 +33,8 @@ const ProductsHierarchy: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
-  const [storeAnalysis, setStoreAnalysis] = useState<Record<string, StoreAnalysis[]>>({});
+  const [sessionStats, setSessionStats] = useState<Record<string, SessionStats>>({});
+  const [storeProductSummaries, setStoreProductSummaries] = useState<Record<string, StoreProductSummary[]>>({});
 
   useEffect(() => {
     fetchData();
@@ -131,133 +129,81 @@ const ProductsHierarchy: React.FC = () => {
     }
   };
 
-  const getSessionBasicStats = (sessionId: string) => {
+  const getSessionBasicInfo = (sessionId: string) => {
     const purchases = storePurchases.filter(p => p.session_id === sessionId);
-    const totalAmount = purchases.reduce((sum, p) => {
-      // 既存のロジックを使用（按分計算）
-      const productAmount = (p as any).product_amount || 0;
-      const shippingCost = (p as any).shipping_cost || 0;
-      const commissionFee = (p as any).commission_fee || 0;
-      return sum + productAmount + shippingCost + commissionFee;
-    }, 0);
     const totalItems = purchases.reduce((sum, p) => sum + (p.item_count || 0), 0);
     return { 
-      purchaseCount: purchases.length, 
-      totalAmount: totalAmount || 0, 
+      storeCount: purchases.length, 
       totalItems,
       purchases 
     };
   };
 
-  const getSessionStoreAnalysis = async (sessionId: string): Promise<StoreAnalysis[]> => {
+  const getSessionStoreProductSummaries = async (sessionId: string): Promise<StoreProductSummary[]> => {
     try {
-      // セッション内の店舗購入データを取得
       const purchases = storePurchases.filter(p => p.session_id === sessionId);
-      const storeAnalysisMap: Record<string, StoreAnalysis> = {};
-      
-      // セッション情報を取得して共通経費を計算
-      const session = sessions.find(s => s.id === sessionId);
-      const commonExpenses = session ? 
-        (session.transportation_cost || 0) + (session.transfer_fee || 0) + (session.agency_fee || 0) : 0;
-      
-      // 全体の店舗購入額を計算（共通経費按分のため）
-      let totalStorePurchaseAmount = 0;
+      const storeSummaryMap: Record<string, StoreProductSummary> = {};
 
       for (const purchase of purchases) {
-        // 各店舗購入に関連する商品データを取得
         const { data: products, error } = await supabase
           .from('products')
-          .select('id, status, allocated_cost, purchase_cost, current_price, sold_price, platform_fee, shipping_cost')
+          .select('id, status')
           .eq('store_purchase_id', purchase.id);
 
         if (error) {
-          console.error('Error fetching products for store analysis:', error);
+          console.error('Error fetching products for store summary:', error);
           continue;
         }
 
         const storeId = purchase.store_id || 'unknown';
-        const storeName = purchase.stores?.name || 'Unknown Store';
+        const storeName = (purchase as any).stores?.name || 'Unknown Store';
         
-        if (!storeAnalysisMap[storeId]) {
-          storeAnalysisMap[storeId] = {
+        if (!storeSummaryMap[storeId]) {
+          storeSummaryMap[storeId] = {
             storeId,
             storeName,
-            purchaseAmount: 0,
-            itemCount: 0,
-            discardedItems: 0,
-            listedItems: 0,
-            soldItems: 0,
-            soldAmount: 0,
-            salesExpenses: 0,
-            profit: 0,
-            profitRate: 0,
-            roi: 0,
+            totalItems: 0,
+            inStock: 0,
+            readyToList: 0,
+            listed: 0,
+            sold: 0,
+            onHold: 0,
+            discarded: 0,
           };
         }
 
-        const store = storeAnalysisMap[storeId];
-        
-        // セッションと同じ計算方法を使用
-        const productAmount = (purchase as any).product_amount || purchase.product_cost || 0;  // 商品代金
-        const shippingCost = purchase.shipping_cost || 0;  // 店舗送料
-        const commissionFee = purchase.commission_fee || 0;  // 店舗手数料
-        const storePurchaseAmount = productAmount + shippingCost + commissionFee;
-        
-        
-        store.purchaseAmount += storePurchaseAmount;
-        store.itemCount += purchase.item_count || 0;
-        
-        // 全体購入額に加算（共通経費按分用）
-        totalStorePurchaseAmount += storePurchaseAmount;
+        const store = storeSummaryMap[storeId];
+        store.totalItems += purchase.item_count || 0;
 
-        // 商品ステータス別集計
         if (products) {
-          const soldProducts = products.filter(p => p.status === 'sold');
-          const discardedProducts = products.filter(p => p.status === 'discarded');
-          const listedProducts = products.filter(p => p.status === 'listed');
-          
-          store.soldItems += soldProducts.length;
-          store.discardedItems += discardedProducts.length;
-          store.listedItems += listedProducts.length;
-          
-          // 売却高計算
-          store.soldAmount += soldProducts.reduce((sum, p) => sum + (p.sold_price || 0), 0);
-          
-          // 売却経費計算（販売手数料10% + 送料）
-          store.salesExpenses += soldProducts.reduce((sum, p) => {
-            const platformFee = p.platform_fee || Math.floor((p.sold_price || 0) * 0.1);
-            const shippingCost = p.shipping_cost || 0;
-            return sum + platformFee + shippingCost;
-          }, 0);
+          products.forEach(product => {
+            switch (product.status) {
+              case 'in_stock':
+                store.inStock++;
+                break;
+              case 'ready_to_list':
+                store.readyToList++;
+                break;
+              case 'listed':
+                store.listed++;
+                break;
+              case 'sold':
+                store.sold++;
+                break;
+              case 'on_hold':
+                store.onHold++;
+                break;
+              case 'discarded':
+                store.discarded++;
+                break;
+            }
+          });
         }
       }
 
-      // 共通経費の按分と最終計算
-      Object.values(storeAnalysisMap).forEach(store => {
-        // 共通経費を店舗購入額の比率で按分
-        const commonExpenseShare = totalStorePurchaseAmount > 0 ? 
-          (store.purchaseAmount / totalStorePurchaseAmount) * commonExpenses : 0;
-        
-        // 最終的な仕入金額（経費込）= 店舗仕入額 + 共通経費按分
-        store.purchaseAmount += commonExpenseShare;
-        
-        // 利益 = 売却高 - 売却経費 - 仕入金額（経費込）
-        store.profit = store.soldAmount - store.salesExpenses - store.purchaseAmount;
-        
-        if (store.soldAmount > 0) {
-          // 利益率 = 利益 / 売却高 * 100
-          store.profitRate = (store.profit / store.soldAmount) * 100;
-        }
-        
-        if (store.purchaseAmount > 0) {
-          // ROI = 利益 / 仕入金額（経費込） * 100
-          store.roi = (store.profit / store.purchaseAmount) * 100;
-        }
-      });
-
-      return Object.values(storeAnalysisMap);
+      return Object.values(storeSummaryMap);
     } catch (error) {
-      console.error('Error getting session store analysis:', error);
+      console.error('Error getting session store summaries:', error);
       return [];
     }
   };
@@ -269,12 +215,20 @@ const ProductsHierarchy: React.FC = () => {
       newExpanded.delete(sessionId);
     } else {
       newExpanded.add(sessionId);
-      // 展開時に店舗分析を取得
-      if (!storeAnalysis[sessionId]) {
-        const analysis = await getSessionStoreAnalysis(sessionId);
-        setStoreAnalysis(prev => ({
+      // 展開時に店舗別商品サマリーを取得
+      if (!storeProductSummaries[sessionId]) {
+        const summaries = await getSessionStoreProductSummaries(sessionId);
+        setStoreProductSummaries(prev => ({
           ...prev,
-          [sessionId]: analysis
+          [sessionId]: summaries
+        }));
+      }
+      // セッション統計も取得
+      if (!sessionStats[sessionId]) {
+        const stats = await getSessionProductStats(sessionId);
+        setSessionStats(prev => ({
+          ...prev,
+          [sessionId]: stats
         }));
       }
     }
@@ -300,20 +254,13 @@ const ProductsHierarchy: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">商品管理</h1>
           <p className="text-gray-600 mt-2">セッション別に商品を管理</p>
         </div>
-        <div className="flex space-x-3">
+        <div>
           <Link
             to="/products/all"
-            className="bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-gray-700 transition-colors"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-blue-700 transition-colors"
           >
             <Package size={20} />
             <span>全商品表示</span>
-          </Link>
-          <Link
-            to="/purchases"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-blue-700 transition-colors"
-          >
-            <Plus size={20} />
-            <span>新規セッション</span>
           </Link>
         </div>
       </div>
@@ -354,145 +301,144 @@ const ProductsHierarchy: React.FC = () => {
         ) : (
           <div className="divide-y divide-gray-200">
             {filteredSessions.map((session) => {
-              const basicStats = getSessionBasicStats(session.id);
-              const totalCost = (session.transportation_cost || 0) + (session.transfer_fee || 0) + (session.agency_fee || 0);
+              const basicInfo = getSessionBasicInfo(session.id);
+              const stats = sessionStats[session.id];
               
               return (
                 <div key={session.id} className="p-6 hover:bg-gray-50">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
+                      <div className="flex items-center space-x-3 mb-3">
                         <Calendar className="text-gray-500" size={20} />
                         <h3 className="text-lg font-semibold text-gray-900">{session.title}</h3>
                         {getStatusBadge(session.status)}
                       </div>
                       
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                      {/* セッション基本情報 */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                         <div>
-                          <div className="text-xs text-gray-500">商品数</div>
-                          <div className="text-lg font-semibold">{basicStats.totalItems}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">仕入額</div>
-                          <div className="text-lg font-semibold">¥{(basicStats.totalAmount || 0).toLocaleString()}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">共通経費</div>
-                          <div className="text-lg font-semibold">¥{(totalCost || 0).toLocaleString()}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">総計</div>
-                          <div className="text-lg font-semibold text-blue-600">
-                            ¥{((basicStats.totalAmount || 0) + (totalCost || 0)).toLocaleString()}
-                          </div>
+                          <div className="text-xs text-gray-500">合計商品数</div>
+                          <div className="text-lg font-semibold text-blue-600">{basicInfo.totalItems}点</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">店舗数</div>
-                          <div className="text-lg font-semibold text-gray-600">{basicStats.purchaseCount}</div>
+                          <div className="text-lg font-semibold text-gray-600">{basicInfo.storeCount}店舗</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500">セッション日</div>
+                          <div className="text-sm font-medium text-gray-700">
+                            {session.session_date ? format(new Date(session.session_date), 'yyyy/MM/dd') : '-'}
+                          </div>
                         </div>
                       </div>
 
-                      {/* セッション日付表示 */}
-                      {session.session_date && (
-                        <div className="text-sm text-gray-500 mb-2">
-                          セッション日: {format(new Date(session.session_date), 'yyyy年MM月dd日')}
+                      {/* 商品ステータス別サマリー（セッション統計がある場合のみ表示） */}
+                      {stats && (
+                        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                          <div className="text-sm font-medium text-gray-700 mb-2">商品進捗状況</div>
+                          <div className="grid grid-cols-3 md:grid-cols-6 gap-3 text-sm">
+                            <div className="text-center">
+                              <div className="text-gray-500">在庫</div>
+                              <div className="font-semibold text-gray-700">{stats.inStock}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500">出品準備</div>
+                              <div className="font-semibold text-orange-600">{stats.readyToList}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500">出品中</div>
+                              <div className="font-semibold text-blue-600">{stats.listed}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500">売却済</div>
+                              <div className="font-semibold text-green-600">{stats.sold}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500">保留</div>
+                              <div className="font-semibold text-yellow-600">{stats.onHold}</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500">破棄</div>
+                              <div className="font-semibold text-red-600">{stats.discarded}</div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
                     
-                    <div className="flex items-center space-x-2 ml-4">
+                    <div className="flex items-center ml-4">
                       <button
                         onClick={() => toggleSessionExpansion(session.id)}
-                        className="flex items-center space-x-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+                        className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                       >
                         <Store size={18} />
-                        <span>店舗別分析</span>
+                        <span>店舗別内訳</span>
                         {expandedSessions.has(session.id) ? (
                           <ChevronUp size={18} />
                         ) : (
                           <ChevronDown size={18} />
                         )}
                       </button>
-                      <Link
-                        to={`/products/session/${session.id}`}
-                        className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <Package size={18} />
-                        <span>商品管理</span>
-                        <ChevronRight size={18} />
-                      </Link>
                     </div>
                   </div>
 
-                  {/* 店舗別分析の展開部分 */}
+                  {/* 店舗別商品内訳の展開部分 */}
                   {expandedSessions.has(session.id) && (
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                        <TrendingUp size={20} className="text-green-600" />
-                        <span>店舗別パフォーマンス分析</span>
+                        <Store size={20} className="text-blue-600" />
+                        <span>店舗別商品内訳</span>
                       </h4>
                       
-                      {storeAnalysis[session.id] ? (
-                        storeAnalysis[session.id].length > 0 ? (
+                      {storeProductSummaries[session.id] ? (
+                        storeProductSummaries[session.id].length > 0 ? (
                           <div className="grid gap-4">
-                            {storeAnalysis[session.id].map((store) => (
+                            {storeProductSummaries[session.id].map((store) => (
                               <div key={store.storeId} className="bg-gray-50 rounded-lg p-4">
-                                <div className="mb-3">
+                                <div className="mb-3 flex items-center justify-between">
                                   <h5 className="font-semibold text-gray-900 flex items-center space-x-2">
                                     <Store size={16} className="text-gray-600" />
                                     <span>{store.storeName}</span>
                                   </h5>
+                                  <Link
+                                    to={`/products/session/${session.id}/store/${store.storeId}`}
+                                    className="flex items-center space-x-1 text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                  >
+                                    <span>商品一覧</span>
+                                    <ChevronRight size={14} />
+                                  </Link>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                                  <div>
-                                    <div className="text-gray-500">仕入点数</div>
-                                    <div className="font-semibold">{store.itemCount}点</div>
+                                <div className="mb-3">
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    合計 <span className="font-semibold text-blue-600">{store.totalItems}点</span>
                                   </div>
-                                  <div>
-                                    <div className="text-gray-500">破棄点数</div>
-                                    <div className="font-semibold text-red-600">{store.discardedItems}点</div>
+                                </div>
+                                
+                                <div className="grid grid-cols-3 md:grid-cols-6 gap-3 text-sm">
+                                  <div className="text-center">
+                                    <div className="text-gray-500">在庫</div>
+                                    <div className="font-semibold text-gray-700">{store.inStock}</div>
                                   </div>
-                                  <div>
-                                    <div className="text-gray-500">出品点数</div>
-                                    <div className="font-semibold text-blue-600">{store.listedItems}点</div>
+                                  <div className="text-center">
+                                    <div className="text-gray-500">出品準備</div>
+                                    <div className="font-semibold text-orange-600">{store.readyToList}</div>
                                   </div>
-                                  <div>
+                                  <div className="text-center">
+                                    <div className="text-gray-500">出品中</div>
+                                    <div className="font-semibold text-blue-600">{store.listed}</div>
+                                  </div>
+                                  <div className="text-center">
                                     <div className="text-gray-500">売却済</div>
-                                    <div className="font-semibold text-green-600">{store.soldItems}点</div>
+                                    <div className="font-semibold text-green-600">{store.sold}</div>
                                   </div>
-                                  <div>
-                                    <div className="text-gray-500">仕入金額（経費込）</div>
-                                    <div className="font-semibold">¥{store.purchaseAmount.toLocaleString()}</div>
+                                  <div className="text-center">
+                                    <div className="text-gray-500">保留</div>
+                                    <div className="font-semibold text-yellow-600">{store.onHold}</div>
                                   </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mt-3">
-                                  <div>
-                                    <div className="text-gray-500">売却高</div>
-                                    <div className="font-semibold text-green-600">¥{store.soldAmount.toLocaleString()}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-gray-500">売却経費</div>
-                                    <div className="font-semibold text-orange-600">¥{store.salesExpenses.toLocaleString()}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-gray-500">利益</div>
-                                    <div className={`font-semibold ${store.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      ¥{store.profit.toLocaleString()}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-gray-500">利益率</div>
-                                    <div className={`font-semibold ${store.profitRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      {store.profitRate.toFixed(1)}%
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-gray-500">ROI</div>
-                                    <div className={`font-semibold ${store.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      {store.roi.toFixed(1)}%
-                                    </div>
+                                  <div className="text-center">
+                                    <div className="text-gray-500">破棄</div>
+                                    <div className="font-semibold text-red-600">{store.discarded}</div>
                                   </div>
                                 </div>
                               </div>
@@ -506,7 +452,7 @@ const ProductsHierarchy: React.FC = () => {
                       ) : (
                         <div className="text-center py-4">
                           <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600"></div>
-                          <div className="text-gray-500 mt-2">分析データを読み込み中...</div>
+                          <div className="text-gray-500 mt-2">商品データを読み込み中...</div>
                         </div>
                       )}
                     </div>

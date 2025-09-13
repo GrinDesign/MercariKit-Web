@@ -133,25 +133,42 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 src/
 ├── components/
-│   └── Layout.tsx              # レイアウトコンポーネント
+│   ├── Layout.tsx              # レイアウトコンポーネント
+│   └── FloatingHomeButton.tsx  # フローティングホームボタン
 ├── pages/
 │   ├── Home.tsx               # ホーム画面
 │   ├── Products.tsx           # 商品管理
+│   ├── ProductDetail.tsx      # 商品詳細画面
+│   ├── ProductEdit.tsx        # 商品編集画面
+│   ├── ProductStores.tsx      # 商品別店舗分析
 │   ├── Purchases.tsx          # 仕入管理
 │   ├── ListingManagement.tsx  # 出品準備
 │   ├── SalesManagement.tsx    # 出品管理
+│   ├── Analytics.tsx          # 分析ダッシュボード
+│   ├── StoreAnalysis.tsx      # 店舗分析
+│   ├── Reports.tsx            # レポート
 │   └── StorePurchaseDetail.tsx # 商品登録
+├── hooks/
+│   └── useProductEdit.ts      # 商品編集用カスタムフック
 ├── templates/
 │   └── productDescriptionTemplate.js # 商品説明テンプレート
 ├── lib/
 │   └── supabase.ts           # Supabase設定
 └── types/
-    └── index.ts              # 型定義
+    └── index.ts              # 型定義（配送タイプ追加）
 ```
 
 ## 開発履歴
 
-### v2.8.0（最新）
+### v2.9.0（最新）
+- **商品詳細画面実装**: 商品の全情報を一覧表示、コピー機能付き
+- **商品編集機能強化**: 詳細画面から直接編集画面へ遷移
+- **配送管理機能追加**: 予定配送と実際の配送情報を分離管理
+- **アセットタイプ機能**: 資産型/回転型商品の分類表示
+- **UIコンポーネント追加**: フローティングホームボタン実装
+- **レポート機能**: 各種分析レポートの基盤整備
+
+### v2.8.0
 - **分析機能大幅強化**: 月別集計、セッション別分析、店舗別パフォーマンス
 - **店舗マスタ改善**: 地方別都道府県選択システム
 - **仕入管理機能拡張**: セッション日付入力、過去日付対応

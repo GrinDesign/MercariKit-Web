@@ -12,8 +12,10 @@ import {
   FileText,
   DollarSign,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  FileSpreadsheet
 } from 'lucide-react';
+import FloatingHomeButton from './FloatingHomeButton';
 
 const Layout: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -21,12 +23,13 @@ const Layout: React.FC = () => {
 
   const menuItems = [
     { path: '/', icon: Home, label: 'ホーム', color: 'from-blue-500 to-cyan-500' },
-    { path: '/products', icon: Package, label: '商品管理', color: 'from-purple-500 to-pink-500' },
     { path: '/purchases', icon: ShoppingCart, label: '仕入管理', color: 'from-green-500 to-emerald-500' },
     { path: '/stores', icon: Store, label: '店舗マスタ', color: 'from-orange-500 to-red-500' },
     { path: '/listing', icon: FileText, label: '出品準備', color: 'from-indigo-500 to-purple-500' },
     { path: '/sales', icon: DollarSign, label: '出品管理', color: 'from-yellow-500 to-orange-500' },
+    { path: '/products', icon: Package, label: '商品管理', color: 'from-purple-500 to-pink-500' },
     { path: '/analytics', icon: BarChart3, label: '分析', color: 'from-cyan-500 to-blue-500' },
+    { path: '/reports', icon: FileSpreadsheet, label: 'レポート', color: 'from-pink-500 to-rose-500' },
     { path: '/settings', icon: Settings, label: '設定', color: 'from-gray-600 to-gray-800' },
   ];
 
@@ -134,6 +137,8 @@ const Layout: React.FC = () => {
           <Outlet />
         </div>
       </main>
+      
+      <FloatingHomeButton />
     </div>
   );
 };

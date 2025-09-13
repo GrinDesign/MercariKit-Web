@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ShoppingBag, Tag, TrendingUp, Filter, Search, X, Save, Check } from 'lucide-react';
+import { Package, Filter, Search, X, Save, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types/index';
 import { getProductDescriptionTemplate } from '../templates/productDescriptionTemplate';
@@ -42,10 +42,14 @@ const ListingManagement: React.FC = () => {
             )
           )
         `)
-        .eq('status', 'ready_to_list')
+        .in('status', ['in_stock', 'ready_to_list'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      
+      console.log('Fetched products for listing:', data); // デバッグログ
+      console.log('Total products found:', data?.length || 0); // デバッグログ
+      
       setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -76,12 +80,6 @@ const ListingManagement: React.FC = () => {
     setFilteredProducts(filtered);
   };
 
-  const getStatusStats = () => {
-    const inStock = products.filter(p => p.status === 'in_stock').length;
-    const readyToList = products.filter(p => p.status === 'ready_to_list').length;
-    const listed = products.filter(p => p.status === 'listed').length;
-    return { inStock, readyToList, listed };
-  };
 
   const getStatusLabel = (status: string) => {
     const labels: { [key: string]: string } = {
@@ -179,7 +177,6 @@ const ListingManagement: React.FC = () => {
     return labels[condition] || condition;
   };
 
-  const stats = getStatusStats();
 
   if (loading) {
     return (
@@ -199,56 +196,6 @@ const ListingManagement: React.FC = () => {
         <p className="text-gray-600">商品の出品準備と管理を行います</p>
       </div>
 
-      {/* 統計カード */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-4">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg">
-              <Package className="text-white" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{stats.inStock}</div>
-              <div className="text-sm text-gray-600">在庫中</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg">
-              <Tag className="text-white" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{stats.readyToList}</div>
-              <div className="text-sm text-gray-600">出品準備完了</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-              <ShoppingBag className="text-white" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{stats.listed}</div>
-              <div className="text-sm text-gray-600">出品済み</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl p-4">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="p-2 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg">
-              <TrendingUp className="text-white" size={20} />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{products.length}</div>
-              <div className="text-sm text-gray-600">総商品数</div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* フィルターとサーチ */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">

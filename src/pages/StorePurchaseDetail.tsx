@@ -42,7 +42,8 @@ const StorePurchaseDetail: React.FC = () => {
     notes: '',
     measurements: {},
     production_country: '',
-    decade: '90s'
+    decade: '90s',
+    asset_type: 'quick_turn' as 'asset' | 'quick_turn'
   });
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
@@ -230,7 +231,10 @@ const StorePurchaseDetail: React.FC = () => {
       initial_price: 0,
       current_price: 0,
       notes: '',
-      measurements: {}
+      measurements: {},
+      production_country: '',
+      decade: '90s',
+      asset_type: 'quick_turn' as 'asset' | 'quick_turn'
     });
     setSelectedPhoto(null);
     setPhotoPreview('');
@@ -896,6 +900,23 @@ const StorePurchaseDetail: React.FC = () => {
                       <option key={decade} value={decade}>{decade}</option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    商品タイプ
+                  </label>
+                  <select
+                    value={productFormData.asset_type}
+                    onChange={(e) => setProductFormData({ ...productFormData, asset_type: e.target.value as 'asset' | 'quick_turn' })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="quick_turn">回転型商品 (Quick Turn)</option>
+                    <option value="asset">資産型商品 (Asset)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    回転型：早期売却重視 / 資産型：長期保有OK
+                  </p>
                 </div>
 
                 <div>
