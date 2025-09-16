@@ -16,6 +16,7 @@ const Products: React.FC = () => {
   const [sessionFilter, setSessionFilter] = useState('all');
   const [storeFilter, setStoreFilter] = useState('all');
   const [sortBy, setSortBy] = useState('created_at_desc');
+  const [sessionSortOrder, setSessionSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [editFormData, setEditFormData] = useState({
@@ -39,6 +40,7 @@ const Products: React.FC = () => {
     status: '',
     shipping_method: '',
     shipping_cost: '',
+    custom_shipping_type: '',
     production_country: '',
     decade: '90s',
     asset_type: 'quick_turn'
@@ -145,6 +147,7 @@ const Products: React.FC = () => {
       status: product.status || 'in_stock',
       shipping_method: product.shipping_method || '',
       shipping_cost: product.shipping_cost ? product.shipping_cost.toString() : '',
+      custom_shipping_type: '',
       production_country: product.production_country || '',
       decade: product.decade || '90s',
       asset_type: product.asset_type || 'quick_turn'
@@ -176,7 +179,7 @@ const Products: React.FC = () => {
         template_description: editFormData.template_description || null,
         notes: editFormData.notes || null,
         status: editFormData.status,
-        shipping_method: editFormData.shipping_method || null,
+        shipping_method: editFormData.shipping_method === 'その他' ? editFormData.custom_shipping_type : editFormData.shipping_method || null,
         shipping_cost: editFormData.shipping_cost ? parseFloat(editFormData.shipping_cost) : null,
         production_country: editFormData.production_country || null,
         decade: editFormData.decade || '90s',
@@ -190,7 +193,7 @@ const Products: React.FC = () => {
 
       if (error) throw error;
 
-      await fetchProducts();
+      await fetchAllData();
       setShowEditModal(false);
       setSelectedProduct(null);
     } catch (error) {
@@ -211,6 +214,18 @@ const Products: React.FC = () => {
     'USA', 'Mexico', 'Japan', 'Korea', 'China', 
     'Bangladesh', 'Vietnam', 'Thailand', 'India', '不明', 'Other'
   ];
+
+  // セッションを並び替える関数
+  const sortedSessions = [...sessions].sort((a, b) => {
+    const aDate = new Date(a.session_date || a.created_at).getTime();
+    const bDate = new Date(b.session_date || b.created_at).getTime();
+    return sessionSortOrder === 'desc' ? bDate - aDate : aDate - bDate;
+  });
+
+  // セッションの並び順を切り替える関数
+  const toggleSessionSortOrder = () => {
+    setSessionSortOrder(sessionSortOrder === 'desc' ? 'asc' : 'desc');
+  };
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -235,9 +250,9 @@ const Products: React.FC = () => {
       case 'created_at_desc':
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       case 'listed_at_asc':
-        return new Date(a.listed_at || 0).getTime() - new Date(b.listed_at || 0).getTime();
+        return new Date(a.listed_date || 0).getTime() - new Date(b.listed_date || 0).getTime();
       case 'listed_at_desc':
-        return new Date(b.listed_at || 0).getTime() - new Date(a.listed_at || 0).getTime();
+        return new Date(b.listed_date || 0).getTime() - new Date(a.listed_date || 0).getTime();
       case 'price_asc':
         return (a.current_price || 0) - (b.current_price || 0);
       case 'price_desc':
@@ -307,16 +322,32 @@ const Products: React.FC = () => {
             {/* 下段：フィルター群 */}
             <div className="flex flex-col md:flex-row gap-4">
               {/* セッションフィルター */}
-              <select
-                value={sessionFilter}
-                onChange={(e) => setSessionFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">すべてのセッション</option>
-                {sessions.map(session => (
-                  <option key={session.id} value={session.id}>{session.title}</option>
-                ))}
-              </select>
+              <div className="flex items-center space-x-2">
+                <select
+                  value={sessionFilter}
+                  onChange={(e) => setSessionFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">すべてのセッション</option>
+                  {sortedSessions.map(session => (
+                    <option key={session.id} value={session.id}>{session.title}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={toggleSessionSortOrder}
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center space-x-1"
+                  title={`セッション日を${sessionSortOrder === 'desc' ? '古い順' : '新しい順'}に並び替え`}
+                >
+                  <span className="text-sm">{sessionSortOrder === 'desc' ? '新→古' : '古→新'}</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {sessionSortOrder === 'desc' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7M12 3v18" />
+                    )}
+                  </svg>
+                </button>
+              </div>
 
               {/* 店舗フィルター */}
               <select
@@ -424,6 +455,9 @@ const Products: React.FC = () => {
                     現在の価格
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    発送情報
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     ステータス
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -484,6 +518,20 @@ const Products: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">¥{product.current_price.toLocaleString()}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500">
+                        {product.shipping_method ? (
+                          <div>
+                            <div>{product.shipping_method}</div>
+                            {product.shipping_cost && (
+                              <div className="text-xs text-gray-400">¥{product.shipping_cost.toLocaleString()}</div>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(product.status)}
@@ -727,18 +775,47 @@ const Products: React.FC = () => {
                       <label className="block text-sm font-medium mb-1">配送方法</label>
                       <select
                         value={editFormData.shipping_method}
-                        onChange={(e) => setEditFormData({ ...editFormData, shipping_method: e.target.value })}
+                        onChange={(e) => {
+                          const method = e.target.value;
+                          let defaultCost = editFormData.shipping_cost;
+
+                          if (method === 'ゆうゆうメルカリ便') {
+                            defaultCost = '215';
+                          } else if (method === 'らくらくメルカリ便') {
+                            defaultCost = '750';
+                          } else if (method === 'その他') {
+                            defaultCost = '0';
+                          }
+
+                          setEditFormData({
+                            ...editFormData,
+                            shipping_method: method,
+                            shipping_cost: defaultCost,
+                            custom_shipping_type: method === 'その他' ? editFormData.custom_shipping_type : ''
+                          });
+                        }}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">選択してください</option>
-                        <option value="らくらくメルカリ便">らくらくメルカリ便</option>
                         <option value="ゆうゆうメルカリ便">ゆうゆうメルカリ便</option>
-                        <option value="普通郵便">普通郵便</option>
-                        <option value="レターパック">レターパック</option>
-                        <option value="宅急便">宅急便</option>
+                        <option value="らくらくメルカリ便">らくらくメルカリ便</option>
                         <option value="その他">その他</option>
                       </select>
                     </div>
+
+                    {/* その他選択時の追加フィールド */}
+                    {editFormData.shipping_method === 'その他' && (
+                      <div>
+                        <label className="block text-sm font-medium mb-1">発送タイプ</label>
+                        <input
+                          type="text"
+                          value={editFormData.custom_shipping_type}
+                          onChange={(e) => setEditFormData({ ...editFormData, custom_shipping_type: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="例：普通郵便、レターパック等"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium mb-1">配送料</label>
@@ -748,7 +825,7 @@ const Products: React.FC = () => {
                         onChange={(e) => setEditFormData({ ...editFormData, shipping_cost: e.target.value })}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                         min="0"
-                        step="0.01"
+                        step="1"
                       />
                     </div>
 

@@ -1852,7 +1852,7 @@ const Analytics: React.FC = () => {
               {activeMenu === 'session' && (
                 <div>
                   <h1 className="text-2xl font-bold mb-6">セッション別収益</h1>
-                  
+
                   <div className="space-y-6">
                     {sessionData.map((session) => (
                       <div key={session.sessionId} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

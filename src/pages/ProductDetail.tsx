@@ -14,6 +14,47 @@ const ProductDetail: React.FC = () => {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  // 日本語表示用のマッピング
+  const categoryMapping = {
+    'tops': 'トップス',
+    'outerwear': 'アウター',
+    'bottoms': 'パンツ',
+    'dresses': 'ワンピース',
+    'shoes': 'シューズ',
+    'bags': 'バッグ',
+    'accessories': 'アクセサリー',
+    'other': 'その他'
+  };
+
+  const conditionMapping = {
+    'new': '新品',
+    'used_like_new': '未使用に近い',
+    'used_good': '目立った傷や汚れなし',
+    'used_fair': 'やや傷や汚れあり',
+    'used_poor': '傷や汚れあり',
+    'used_damaged': '全体的に状態が悪い'
+  };
+
+  const genderMapping = {
+    'men': 'メンズ',
+    'women': 'レディース',
+    'unisex': 'ユニセックス'
+  };
+
+  const assetTypeMapping = {
+    'asset': '資産型商品',
+    'quick_turn': '回転型商品'
+  };
+
+  const statusMapping = {
+    'in_stock': '在庫',
+    'ready_to_list': '出品準備完了',
+    'listed': '出品中',
+    'sold': '売却済み',
+    'on_hold': '保留',
+    'discarded': '破棄'
+  };
+
   useEffect(() => {
     if (productId) {
       fetchProduct();
@@ -220,22 +261,28 @@ const ProductDetail: React.FC = () => {
               <span>日付情報</span>
             </h3>
             <div className="space-y-2">
-              {product.listed_at && (
+              {product.listed_date && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600">出品日</label>
-                  <p className="text-gray-900 text-sm">{new Date(product.listed_at).toLocaleDateString('ja-JP')}</p>
+                  <p className="text-gray-900 text-sm">
+                    {new Date(product.listed_date).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+                  </p>
                 </div>
               )}
-              {product.sold_at && (
+              {product.sold_date && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600">売却日</label>
-                  <p className="text-gray-900 text-sm">{new Date(product.sold_at).toLocaleDateString('ja-JP')}</p>
+                  <p className="text-gray-900 text-sm">
+                    {new Date(product.sold_date).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+                  </p>
                 </div>
               )}
               {product.discarded_at && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600">廃棄日</label>
-                  <p className="text-gray-900 text-sm">{new Date(product.discarded_at).toLocaleDateString('ja-JP')}</p>
+                  <p className="text-gray-900 text-sm">
+                    {new Date(product.discarded_at).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+                  </p>
                 </div>
               )}
             </div>
@@ -280,7 +327,7 @@ const ProductDetail: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600">カテゴリー</label>
-                <p className="text-gray-900 text-sm">{product.category}</p>
+                <p className="text-gray-900 text-sm">{categoryMapping[product.category as keyof typeof categoryMapping] || product.category}</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600">サイズ</label>
@@ -292,11 +339,11 @@ const ProductDetail: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600">状態</label>
-                <p className="text-gray-900 text-sm">{product.condition}</p>
+                <p className="text-gray-900 text-sm">{conditionMapping[product.condition as keyof typeof conditionMapping] || product.condition}</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600">性別</label>
-                <p className="text-gray-900 text-sm">{product.gender || '-'}</p>
+                <p className="text-gray-900 text-sm">{genderMapping[product.gender as keyof typeof genderMapping] || product.gender || '-'}</p>
               </div>
             </div>
           </div>
@@ -323,18 +370,13 @@ const ProductDetail: React.FC = () => {
               <div>
                 <label className="block text-xs font-medium text-gray-600">アセットタイプ</label>
                 <p className="text-gray-900 text-sm">
-                  {product.asset_type === 'asset' ? '資産' : 'クイックターン'}
+                  {assetTypeMapping[product.asset_type as keyof typeof assetTypeMapping] || product.asset_type}
                 </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600">ステータス</label>
                 <p className="text-gray-900 text-sm">
-                  {product.status === 'in_stock' ? '在庫' :
-                   product.status === 'ready_to_list' ? '出品準備' :
-                   product.status === 'listed' ? '出品中' :
-                   product.status === 'sold' ? '売却済み' :
-                   product.status === 'on_hold' ? '保留' :
-                   product.status === 'discarded' ? '廃棄' : product.status}
+                  {statusMapping[product.status as keyof typeof statusMapping] || product.status}
                 </p>
               </div>
             </div>
@@ -401,50 +443,17 @@ const ProductDetail: React.FC = () => {
               <Truck size={16} className="text-orange-600" />
               <span>配送情報</span>
             </h3>
-            <div className="space-y-4">
-              {/* 予定配送 */}
+            <div className="space-y-3">
               <div>
-                <h4 className="text-xs font-semibold text-gray-700 mb-2">出品時（予定）</h4>
-                <div className="space-y-2 pl-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">配送方法</label>
-                    <p className="text-gray-900 text-sm">{product.shipping_method || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">配送タイプ</label>
-                    <p className="text-gray-900 text-sm">
-                      {product.planned_shipping_type ? SHIPPING_TYPES[product.planned_shipping_type].label : '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">配送料</label>
-                    <p className="text-gray-900 text-sm">
-                      {product.planned_shipping_cost ? `¥${product.planned_shipping_cost.toLocaleString()}` : '-'}
-                    </p>
-                  </div>
-                </div>
+                <label className="block text-xs font-medium text-gray-600">配送方法</label>
+                <p className="text-gray-900 text-sm">{product.shipping_method || '-'}</p>
               </div>
-              
-              {/* 実際の配送 */}
-              {(product.actual_shipping_type || product.actual_shipping_cost) && (
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-700 mb-2">売却時（実際）</h4>
-                  <div className="space-y-2 pl-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600">配送タイプ</label>
-                      <p className="text-gray-900 text-sm">
-                        {product.actual_shipping_type ? SHIPPING_TYPES[product.actual_shipping_type].label : '-'}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600">配送料</label>
-                      <p className="text-gray-900 text-sm">
-                        {product.actual_shipping_cost ? `¥${product.actual_shipping_cost.toLocaleString()}` : '-'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-600">送料</label>
+                <p className="text-gray-900 text-sm">
+                  {product.shipping_cost ? `¥${product.shipping_cost.toLocaleString()}` : '-'}
+                </p>
+              </div>
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, X, Gem, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Product, ShippingType, SHIPPING_TYPES, getShippingCost } from '../types/index';
+import { Product } from '../types/index';
 import { useHierarchicalNavigation } from '../hooks/useHierarchicalNavigation';
 
 const ProductEdit: React.FC = () => {
@@ -32,8 +32,6 @@ const ProductEdit: React.FC = () => {
     status: '',
     shipping_method: '',
     shipping_cost: '',
-    planned_shipping_type: '' as ShippingType | '',
-    planned_shipping_cost: '',
     production_country: '',
     decade: '90s',
     asset_type: 'quick_turn',
@@ -110,7 +108,10 @@ const ProductEdit: React.FC = () => {
         .single();
 
       if (error) throw error;
-      
+
+      console.log('Fetched product data:', data);
+      console.log('Product description:', data.description);
+
       setProduct(data);
       setEditFormData({
         name: data.name || '',
@@ -130,10 +131,8 @@ const ProductEdit: React.FC = () => {
         description: data.description || '',
         notes: data.notes || '',
         status: data.status || 'in_stock',
-        shipping_method: data.shipping_method || '',
-        shipping_cost: data.shipping_cost ? data.shipping_cost.toString() : '',
-        planned_shipping_type: data.planned_shipping_type || '',
-        planned_shipping_cost: data.planned_shipping_cost ? data.planned_shipping_cost.toString() : '',
+        shipping_method: data.shipping_method || 'ゆうゆうメルカリ便',
+        shipping_cost: data.shipping_cost ? data.shipping_cost.toString() : '215',
         production_country: data.production_country || '',
         decade: data.decade || '90s',
         asset_type: data.asset_type || 'quick_turn',
@@ -147,15 +146,6 @@ const ProductEdit: React.FC = () => {
     }
   };
 
-  // 送料タイプ変更時のハンドラー
-  const handleShippingTypeChange = (shippingType: ShippingType) => {
-    const cost = getShippingCost(shippingType);
-    setEditFormData({
-      ...editFormData,
-      planned_shipping_type: shippingType,
-      planned_shipping_cost: cost.toString()
-    });
-  };
 
   const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,47 +153,104 @@ const ProductEdit: React.FC = () => {
 
     setSaving(true);
     try {
-      const updateData: any = {
-        name: editFormData.name,
-        mercari_title: editFormData.mercari_title || null,
-        brand: editFormData.brand || null,
-        category: reverseCategoryMapping[editFormData.category] || editFormData.category,
-        size: editFormData.size || null,
-        color: editFormData.color || null,
-        condition: reverseConditionMapping[editFormData.condition] || editFormData.condition,
-        gender: reverseGenderMapping[editFormData.gender] || editFormData.gender || null,
-        purchase_cost: editFormData.purchase_cost ? parseFloat(editFormData.purchase_cost) : 0,
-        initial_price: editFormData.initial_price ? parseFloat(editFormData.initial_price) : 0,
-        current_price: editFormData.current_price ? parseFloat(editFormData.current_price) : 0,
-        sold_price: editFormData.sold_price ? parseFloat(editFormData.sold_price) : null,
-        reference_price: editFormData.reference_price ? parseFloat(editFormData.reference_price) : null,
-        measurements: editFormData.measurements ? JSON.parse(editFormData.measurements) : null,
-        description: editFormData.description || null,
-        notes: editFormData.notes || null,
-        status: editFormData.status,
-        shipping_method: editFormData.shipping_method || null,
-        shipping_cost: editFormData.shipping_cost ? parseFloat(editFormData.shipping_cost) : null,
-        planned_shipping_type: editFormData.planned_shipping_type || null,
-        planned_shipping_cost: editFormData.planned_shipping_cost ? parseFloat(editFormData.planned_shipping_cost) : null,
-        production_country: editFormData.production_country || null,
-        decade: editFormData.decade || '90s',
-        asset_type: editFormData.asset_type || 'quick_turn',
-        listed_at: editFormData.listed_at || null,
-        sold_at: editFormData.sold_at || null
+      // measurementsの安全なパース
+      let parsedMeasurements = null;
+      if (editFormData.measurements) {
+        try {
+          parsedMeasurements = JSON.parse(editFormData.measurements);
+        } catch (measurementError) {
+          console.error('Invalid measurements JSON:', editFormData.measurements);
+          alert('採寸データの形式が正しくありません。');
+          setSaving(false);
+          return;
+        }
+      }
+
+      // 数値フィールドの安全なパース
+      const safeParseFloat = (value: string) => {
+        if (!value || value === '') return null;
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? null : parsed;
       };
 
-      const { error } = await supabase
+      const updateData: any = {
+        name: editFormData.name.trim(),
+        mercari_title: editFormData.mercari_title?.trim() || null,
+        brand: editFormData.brand?.trim() || null,
+        category: reverseCategoryMapping[editFormData.category] || editFormData.category,
+        size: editFormData.size?.trim() || null,
+        color: editFormData.color?.trim() || null,
+        condition: reverseConditionMapping[editFormData.condition] || editFormData.condition,
+        gender: editFormData.gender ? (reverseGenderMapping[editFormData.gender] || editFormData.gender) : null,
+        purchase_cost: safeParseFloat(editFormData.purchase_cost) || 0,
+        initial_price: safeParseFloat(editFormData.initial_price) || 0,
+        current_price: safeParseFloat(editFormData.current_price) || 0,
+        sold_price: safeParseFloat(editFormData.sold_price),
+        reference_price: safeParseFloat(editFormData.reference_price),
+        measurements: parsedMeasurements,
+        description: (editFormData.description && editFormData.description.trim()) ? editFormData.description.trim() : null,
+        notes: editFormData.notes?.trim() || null,
+        status: editFormData.status,
+        shipping_method: editFormData.shipping_method?.trim() || null,
+        shipping_cost: safeParseFloat(editFormData.shipping_cost),
+        listed_at: editFormData.listed_at ? editFormData.listed_at : null,
+        sold_at: editFormData.sold_at ? editFormData.sold_at : null
+      };
+
+
+      // production_country, decade, asset_type はデータベースに存在することを確認済み
+      updateData.production_country = editFormData.production_country?.trim() || null;
+      updateData.decade = editFormData.decade || '90s';
+      updateData.asset_type = editFormData.asset_type || 'quick_turn';
+
+      // 商品名が空でないかチェック
+      if (!updateData.name) {
+        alert('商品名は必須です。');
+        setSaving(false);
+        return;
+      }
+
+      console.log('Updating product with data:', updateData);
+      console.log('Description form value:', editFormData.description);
+      console.log('Description in updateData:', updateData.description);
+      console.log('Gender form value:', editFormData.gender);
+      console.log('Reverse gender mapping result:', reverseGenderMapping[editFormData.gender]);
+      console.log('Final gender value:', updateData.gender);
+      console.log('Listed_at field value:', editFormData.listed_at);
+      console.log('Listed_at in updateData:', updateData.listed_at);
+      console.log('Sold_at field value:', editFormData.sold_at);
+      console.log('Sold_at in updateData:', updateData.sold_at);
+
+      const { data: updatedProduct, error } = await supabase
         .from('products')
         .update(updateData)
-        .eq('id', product.id);
+        .eq('id', product.id)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        console.error('Update data:', updateData);
+        console.error('Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
 
+      console.log('Updated product from DB:', updatedProduct);
+      console.log('Updated listed_at:', updatedProduct?.listed_at);
+      console.log('Updated sold_at:', updatedProduct?.sold_at);
+
+      alert('商品が正常に更新されました。');
       // 商品詳細に戻る（1階層上）
       navigate(`/products/${product.id}`);
     } catch (error) {
       console.error('Error updating product:', error);
-      alert('商品の更新に失敗しました。');
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      alert(`商品の更新に失敗しました: ${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -251,9 +298,30 @@ const ProductEdit: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">商品編集</h1>
           </div>
         </div>
+
+        {/* ヘッダー右側に保存ボタンを移動 */}
+        <div className="flex items-center space-x-3">
+          <button
+            type="button"
+            onClick={() => navigate(navigationInfo.backPath)}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+          >
+            <X size={18} />
+            <span>キャンセル</span>
+          </button>
+          <button
+            type="submit"
+            form="product-edit-form"
+            disabled={saving}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <Save size={18} />
+            <span>{saving ? '保存中...' : '保存'}</span>
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={handleUpdateProduct} className="space-y-8">
+      <form id="product-edit-form" onSubmit={handleUpdateProduct} className="space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* 基本情報 */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -473,71 +541,42 @@ const ProductEdit: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">配送方法</label>
+                <label className="block text-sm font-medium mb-1">発送タイプ</label>
                 <select
                   value={editFormData.shipping_method}
-                  onChange={(e) => setEditFormData({ ...editFormData, shipping_method: e.target.value })}
+                  onChange={(e) => {
+                    const method = e.target.value;
+                    let defaultCost = editFormData.shipping_cost;
+
+                    if (method === 'ゆうゆうメルカリ便') {
+                      defaultCost = '215';
+                    } else if (method === 'らくらくメルカリ便') {
+                      defaultCost = '750';
+                    }
+
+                    setEditFormData({
+                      ...editFormData,
+                      shipping_method: method,
+                      shipping_cost: defaultCost
+                    });
+                  }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">選択してください</option>
-                  <option value="らくらくメルカリ便">らくらくメルカリ便</option>
                   <option value="ゆうゆうメルカリ便">ゆうゆうメルカリ便</option>
-                  <option value="普通郵便">普通郵便</option>
-                  <option value="レターパック">レターパック</option>
-                  <option value="宅急便">宅急便</option>
-                  <option value="その他">その他</option>
+                  <option value="らくらくメルカリ便">らくらくメルカリ便</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">配送料</label>
+                <label className="block text-sm font-medium mb-1">送料</label>
                 <input
                   type="number"
                   value={editFormData.shipping_cost}
                   onChange={(e) => setEditFormData({ ...editFormData, shipping_cost: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   min="0"
-                  step="0.01"
+                  step="1"
                 />
-              </div>
-              
-              {/* 送料タイプ選択（新機能） */}
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-3">予定送料タイプ</label>
-                <div className="space-y-3">
-                  {Object.entries(SHIPPING_TYPES).map(([key, info]) => (
-                    <label
-                      key={key}
-                      className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                        editFormData.planned_shipping_type === key
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-300 hover:border-gray-400'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="planned_shipping_type"
-                        value={key}
-                        checked={editFormData.planned_shipping_type === key}
-                        onChange={(e) => handleShippingTypeChange(e.target.value as ShippingType)}
-                        className="mr-3"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {info.label} - {info.cost}円
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {info.description}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                {editFormData.planned_shipping_cost && (
-                  <div className="mt-2 text-sm text-gray-600">
-                    予定送料: {editFormData.planned_shipping_cost}円
-                  </div>
-                )}
               </div>
 
               <div>
@@ -612,8 +651,11 @@ const ProductEdit: React.FC = () => {
             <div>
               <label className="block text-sm font-medium mb-1">商品説明</label>
               <textarea
-                value={editFormData.description}
-                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                value={editFormData.description || ''}
+                onChange={(e) => {
+                  console.log('Description changed:', e.target.value);
+                  setEditFormData({ ...editFormData, description: e.target.value });
+                }}
                 rows={16}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="商品の詳細な説明を入力してください"
@@ -633,25 +675,6 @@ const ProductEdit: React.FC = () => {
           </div>
         </div>
 
-        {/* 保存ボタン */}
-        <div className="flex justify-end space-x-4 pt-6">
-          <button
-            type="button"
-            onClick={() => navigate(navigationInfo.backPath)}
-            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
-          >
-            <X size={18} />
-            <span>キャンセル</span>
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
-          >
-            <Save size={18} />
-            <span>{saving ? '保存中...' : '保存'}</span>
-          </button>
-        </div>
       </form>
     </div>
   );

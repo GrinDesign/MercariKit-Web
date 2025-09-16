@@ -7,9 +7,11 @@ import ProductsByStore from './pages/ProductsByStore';
 import ProductsLegacy from './pages/ProductsLegacy';
 import ProductDetail from './pages/ProductDetail';
 import ProductEdit from './pages/ProductEdit';
-import Purchases from './pages/Purchases';
-import PurchaseDetail from './pages/PurchaseDetail';
+import PurchasesNew from './pages/PurchasesNew';
+// import Purchases from './pages/Purchases'; // 旧バージョン
 import StorePurchaseDetail from './pages/StorePurchaseDetail';
+import StorePurchaseNew from './pages/StorePurchaseNew';
+import StorePurchaseEdit from './pages/StorePurchaseEdit';
 import ListingManagement from './pages/ListingManagement';
 import SalesManagement from './pages/SalesManagement';
 import Stores from './pages/Stores';
@@ -34,8 +36,9 @@ function App() {
           <Route path="products/session/:sessionId/store/:storeId" element={<ProductsByStore />} />
           <Route path="products/:productId" element={<ProductDetail />} />
           <Route path="products/:productId/edit" element={<ProductEdit />} />
-          <Route path="purchases" element={<Purchases />} />
-          <Route path="purchases/:sessionId" element={<PurchaseDetail />} />
+          <Route path="purchases" element={<PurchasesNew />} />
+          <Route path="purchases/:sessionId/stores/new" element={<StorePurchaseNew />} />
+          <Route path="purchases/:sessionId/stores/:purchaseId/edit" element={<StorePurchaseEdit />} />
           <Route path="purchases/:sessionId/stores/:storeId" element={<StorePurchaseDetail />} />
           <Route path="stores" element={<Stores />} />
           <Route path="stores/:storeId" element={<StoreAnalysis />} />

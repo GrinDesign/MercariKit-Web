@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Filter, Search, X, Save, Check } from 'lucide-react';
+import { Package, Filter, Search, X, Save, Check, Edit } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types/index';
 import { getProductDescriptionTemplate } from '../templates/productDescriptionTemplate';
@@ -13,12 +13,16 @@ const ListingManagement: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showListingForm, setShowListingForm] = useState(false);
+  const [showProductEditForm, setShowProductEditForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [listingFormData, setListingFormData] = useState({
     mercari_title: '',
     description: '',
     current_price: 0,
     reference_price: 0,
-    listed_at: ''
+    listed_at: '',
+    shipping_method: 'ゆうゆうメルカリ',
+    shipping_cost: 215
   });
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
@@ -112,10 +116,13 @@ const ListingManagement: React.FC = () => {
       description: product.description || '',
       current_price: product.current_price || 0,
       reference_price: product.reference_price || 0,
-      listed_at: product.listed_at ? new Date(product.listed_at).toISOString().split('T')[0] : ''
+      listed_at: product.listed_at ? new Date(product.listed_at).toISOString().split('T')[0] : '',
+      shipping_method: product.shipping_method || 'ゆうゆうメルカリ',
+      shipping_cost: product.shipping_cost || 215
     });
     setShowListingForm(true);
   };
+
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,7 +134,9 @@ const ListingManagement: React.FC = () => {
         description: listingFormData.description,
         current_price: listingFormData.current_price,
         initial_price: listingFormData.current_price, // 出品価格を初期価格にも設定
-        reference_price: listingFormData.reference_price || null
+        reference_price: listingFormData.reference_price || null,
+        shipping_method: listingFormData.shipping_method,
+        shipping_cost: listingFormData.shipping_cost
       };
 
       // 出品日が設定されている場合のみ追加
@@ -303,7 +312,7 @@ const ListingManagement: React.FC = () => {
 
                       <div className="flex items-center space-x-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          product.status === 'in_stock' 
+                          product.status === 'in_stock'
                             ? 'bg-blue-100 text-blue-700'
                             : product.status === 'ready_to_list'
                             ? 'bg-green-100 text-green-700'
@@ -314,9 +323,10 @@ const ListingManagement: React.FC = () => {
 
                         <button
                           onClick={() => handleProductSelect(product)}
-                          className="px-3 py-1 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors"
+                          className="flex items-center space-x-1 px-3 py-1 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors"
                         >
-                          出品情報編集
+                          <Edit size={14} />
+                          <span>出品情報編集</span>
                         </button>
                       </div>
                     </div>
@@ -359,6 +369,228 @@ const ListingManagement: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 商品編集フォーム */}
+      {showProductEditForm && editingProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">商品情報編集</h2>
+                <button
+                  onClick={() => {
+                    setShowProductEditForm(false);
+                    setEditingProduct(null);
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* 基本情報 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    商品名 *
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProduct.name}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ブランド
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProduct.brand || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, brand: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    カテゴリ *
+                  </label>
+                  <select
+                    value={editingProduct.category}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  >
+                    <option value="">選択してください</option>
+                    <option value="tops">トップス</option>
+                    <option value="outerwear">アウター</option>
+                    <option value="bottoms">ボトムス</option>
+                    <option value="dresses">ワンピース</option>
+                    <option value="shoes">シューズ</option>
+                    <option value="accessories">アクセサリー</option>
+                    <option value="bags">バッグ</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    サイズ
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProduct.size || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, size: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    色
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProduct.color || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, color: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    状態 *
+                  </label>
+                  <select
+                    value={editingProduct.condition}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, condition: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  >
+                    <option value="">選択してください</option>
+                    <option value="new_with_tags">新品・タグ付き</option>
+                    <option value="new_without_tags">新品・タグなし</option>
+                    <option value="nearly_new">未使用に近い</option>
+                    <option value="good">目立った傷や汚れなし</option>
+                    <option value="fair">やや傷や汚れあり</option>
+                    <option value="poor">傷や汚れあり</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 価格情報 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    仕入価格 (円)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingProduct.purchase_cost || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, purchase_cost: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-right"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    出品価格 (円)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingProduct.current_price || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, current_price: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-right"
+                    min="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    参考価格 (円)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingProduct.reference_price || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, reference_price: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-right"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              {/* 商品説明 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  商品説明
+                </label>
+                <textarea
+                  value={editingProduct.description || ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  rows={6}
+                  placeholder="商品の詳細説明を入力してください..."
+                />
+              </div>
+
+              {/* アクションボタン */}
+              <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowProductEditForm(false);
+                    setEditingProduct(null);
+                  }}
+                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!editingProduct) return;
+
+                    try {
+                      const { error } = await supabase
+                        .from('products')
+                        .update({
+                          name: editingProduct.name,
+                          brand: editingProduct.brand,
+                          category: editingProduct.category,
+                          size: editingProduct.size,
+                          color: editingProduct.color,
+                          condition: editingProduct.condition,
+                          purchase_cost: editingProduct.purchase_cost,
+                          current_price: editingProduct.current_price,
+                          reference_price: editingProduct.reference_price,
+                          description: editingProduct.description
+                        })
+                        .eq('id', editingProduct.id);
+
+                      if (error) throw error;
+
+                      setShowProductEditForm(false);
+                      setEditingProduct(null);
+                      fetchProducts();
+                    } catch (error) {
+                      console.error('Error updating product:', error);
+                      alert('商品の更新に失敗しました');
+                    }
+                  }}
+                  className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 出品情報編集モーダル */}
       {showListingForm && selectedProduct && (
@@ -456,6 +688,56 @@ const ListingManagement: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 発送方法と送料 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      発送方法 *
+                    </label>
+                    <select
+                      value={listingFormData.shipping_method}
+                      onChange={(e) => {
+                        const method = e.target.value;
+                        let cost = 215; // デフォルトはゆうゆうメルカリ
+                        if (method === 'らくらくメルカリ') {
+                          cost = 750; // デフォルトは750円
+                        }
+                        setListingFormData({
+                          ...listingFormData,
+                          shipping_method: method,
+                          shipping_cost: cost
+                        });
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      required
+                    >
+                      <option value="ゆうゆうメルカリ">ゆうゆうメルカリ (215円)</option>
+                      <option value="らくらくメルカリ">らくらくメルカリ</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      送料 (円) *
+                    </label>
+                    {listingFormData.shipping_method === 'らくらくメルカリ' ? (
+                      <select
+                        value={listingFormData.shipping_cost}
+                        onChange={(e) => setListingFormData({ ...listingFormData, shipping_cost: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                      >
+                        <option value={750}>750円 (コンパクト)</option>
+                        <option value={850}>850円 (レギュラー)</option>
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700">
+                        215円
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* 出品日 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -482,8 +764,12 @@ const ListingManagement: React.FC = () => {
                         <span>¥{listingFormData.current_price.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">手数料 (10%):</span>
+                        <span className="text-gray-600">メルカリ手数料 (10%):</span>
                         <span className="text-red-600">-¥{Math.floor(listingFormData.current_price * 0.1).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">送料:</span>
+                        <span className="text-red-600">-¥{listingFormData.shipping_cost.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">仕入価格:</span>
@@ -492,11 +778,11 @@ const ListingManagement: React.FC = () => {
                       <div className="flex justify-between border-t pt-2 font-medium">
                         <span>予想利益:</span>
                         <span className={`${
-                          listingFormData.current_price * 0.9 - selectedProduct.purchase_cost >= 0 
-                            ? 'text-green-600' 
+                          listingFormData.current_price * 0.9 - listingFormData.shipping_cost - selectedProduct.purchase_cost >= 0
+                            ? 'text-green-600'
                             : 'text-red-600'
                         }`}>
-                          ¥{Math.floor(listingFormData.current_price * 0.9 - selectedProduct.purchase_cost).toLocaleString()}
+                          ¥{Math.floor(listingFormData.current_price * 0.9 - listingFormData.shipping_cost - selectedProduct.purchase_cost).toLocaleString()}
                         </span>
                       </div>
                     </div>

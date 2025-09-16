@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Package, DollarSign, Pause, Ban, Edit, Check, X } from 'lucide-react';
+import { Package, DollarSign, Pause, Ban, Edit, Check, X, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types/index';
 
 const SalesManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +22,7 @@ const SalesManagement: React.FC = () => {
     sold_at: new Date().toISOString().split('T')[0],
     shipping_method: '',
     shipping_cost: 0,
+    custom_shipping_type: '',
     hold_reason: '',
     held_at: new Date().toISOString().split('T')[0],
     discard_reason: '',
@@ -64,8 +67,9 @@ const SalesManagement: React.FC = () => {
       listed_at: product.listed_at ? new Date(product.listed_at).toISOString().split('T')[0] : '',
       sold_price: product.sold_price || product.current_price || 0,
       sold_at: product.sold_at ? new Date(product.sold_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      shipping_method: product.shipping_method || '',
-      shipping_cost: product.shipping_cost || 0,
+      shipping_method: product.shipping_method || 'ゆうゆうメルカリ便',
+      shipping_cost: product.shipping_cost || 215,
+      custom_shipping_type: '',
       hold_reason: type === 'edit_hold' ? (product.notes || '') : '',
       held_at: new Date().toISOString().split('T')[0],
       discard_reason: type === 'edit_discard' ? (product.notes || '') : '',
@@ -94,7 +98,9 @@ const SalesManagement: React.FC = () => {
           updateData = {
             current_price: formData.current_price,
             mercari_title: formData.mercari_title,
-            listed_at: formData.listed_at ? new Date(formData.listed_at).toISOString() : null
+            listed_at: formData.listed_at ? new Date(formData.listed_at).toISOString() : null,
+            shipping_method: formData.shipping_method === 'その他' ? formData.custom_shipping_type : formData.shipping_method,
+            shipping_cost: formData.shipping_cost
           };
           break;
 
@@ -103,7 +109,7 @@ const SalesManagement: React.FC = () => {
             status: 'sold',
             sold_price: formData.sold_price,
             sold_at: new Date(formData.sold_at).toISOString(),
-            shipping_method: formData.shipping_method,
+            shipping_method: formData.shipping_method === 'その他' ? formData.custom_shipping_type : formData.shipping_method,
             shipping_cost: formData.shipping_cost,
             platform_fee: Math.floor(formData.sold_price * 0.1) // 販売手数料10%
           };
@@ -129,7 +135,7 @@ const SalesManagement: React.FC = () => {
           updateData = {
             sold_price: formData.sold_price,
             sold_at: new Date(formData.sold_at).toISOString(),
-            shipping_method: formData.shipping_method,
+            shipping_method: formData.shipping_method === 'その他' ? formData.custom_shipping_type : formData.shipping_method,
             shipping_cost: formData.shipping_cost,
             platform_fee: Math.floor(formData.sold_price * 0.1) // 販売手数料10%
           };
@@ -193,11 +199,8 @@ const SalesManagement: React.FC = () => {
   };
 
   const shippingMethods = [
-    { value: 'らくらくメルカリ便', label: 'らくらくメルカリ便', cost: 175 },
-    { value: 'ゆうゆうメルカリ便', label: 'ゆうゆうメルカリ便', cost: 175 },
-    { value: '普通郵便', label: '普通郵便', cost: 84 },
-    { value: 'レターパック', label: 'レターパック', cost: 370 },
-    { value: '宅急便', label: '宅急便', cost: 800 },
+    { value: 'ゆうゆうメルカリ便', label: 'ゆうゆうメルカリ便', cost: 215 },
+    { value: 'らくらくメルカリ便', label: 'らくらくメルカリ便', cost: 750 },
     { value: 'その他', label: 'その他', cost: 0 }
   ];
 
@@ -323,6 +326,17 @@ const SalesManagement: React.FC = () => {
                         {product.status === 'listed' && (
                           <>
                             <button
+                              onClick={() => {
+                                // 商品詳細画面に直接遷移
+                                sessionStorage.setItem('previousProductListPath', '/sales');
+                                navigate(`/products/${product.id}`);
+                              }}
+                              className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors flex items-center space-x-1"
+                            >
+                              <Upload size={12} />
+                              <span>出品</span>
+                            </button>
+                            <button
                               onClick={() => openModal('edit', product)}
                               className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
                             >
@@ -435,12 +449,13 @@ const SalesManagement: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">メルカリタイトル</label>
+                    <label className="block text-sm font-medium mb-1">タイトル</label>
                     <input
                       type="text"
                       value={formData.mercari_title}
                       onChange={(e) => setFormData({ ...formData, mercari_title: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="メルカリ出品タイトル"
                     />
                   </div>
                   <div>
@@ -450,6 +465,52 @@ const SalesManagement: React.FC = () => {
                       value={formData.listed_at}
                       onChange={(e) => setFormData({ ...formData, listed_at: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">発送タイプ（予定）</label>
+                    <select
+                      value={formData.shipping_method}
+                      onChange={(e) => {
+                        const selectedMethod = shippingMethods.find(m => m.value === e.target.value);
+                        setFormData({
+                          ...formData,
+                          shipping_method: e.target.value,
+                          shipping_cost: selectedMethod?.cost || 0,
+                          custom_shipping_type: e.target.value === 'その他' ? formData.custom_shipping_type : ''
+                        });
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {shippingMethods.map(method => (
+                        <option key={method.value} value={method.value}>{method.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* その他選択時の追加フィールド */}
+                  {formData.shipping_method === 'その他' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">発送タイプ詳細</label>
+                      <input
+                        type="text"
+                        value={formData.custom_shipping_type}
+                        onChange={(e) => setFormData({ ...formData, custom_shipping_type: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="例：普通郵便、レターパック等"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">送料（予定）</label>
+                    <input
+                      type="number"
+                      value={formData.shipping_cost}
+                      onChange={(e) => setFormData({ ...formData, shipping_cost: parseInt(e.target.value) })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      min="0"
+                      placeholder="送料"
                     />
                   </div>
                 </>
@@ -483,10 +544,11 @@ const SalesManagement: React.FC = () => {
                       value={formData.shipping_method}
                       onChange={(e) => {
                         const selectedMethod = shippingMethods.find(m => m.value === e.target.value);
-                        setFormData({ 
-                          ...formData, 
+                        setFormData({
+                          ...formData,
                           shipping_method: e.target.value,
-                          shipping_cost: selectedMethod?.cost || 0
+                          shipping_cost: selectedMethod?.cost || 0,
+                          custom_shipping_type: e.target.value === 'その他' ? formData.custom_shipping_type : ''
                         });
                       }}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -498,6 +560,22 @@ const SalesManagement: React.FC = () => {
                       ))}
                     </select>
                   </div>
+
+                  {/* その他選択時の追加フィールド */}
+                  {formData.shipping_method === 'その他' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">発送タイプ</label>
+                      <input
+                        type="text"
+                        value={formData.custom_shipping_type}
+                        onChange={(e) => setFormData({ ...formData, custom_shipping_type: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="例：普通郵便、レターパック等"
+                        required
+                      />
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium mb-1">送料</label>
                     <input
@@ -591,10 +669,11 @@ const SalesManagement: React.FC = () => {
                       value={formData.shipping_method}
                       onChange={(e) => {
                         const selectedMethod = shippingMethods.find(m => m.value === e.target.value);
-                        setFormData({ 
-                          ...formData, 
+                        setFormData({
+                          ...formData,
                           shipping_method: e.target.value,
-                          shipping_cost: selectedMethod?.cost || 0
+                          shipping_cost: selectedMethod?.cost || 0,
+                          custom_shipping_type: e.target.value === 'その他' ? formData.custom_shipping_type : ''
                         });
                       }}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -605,6 +684,22 @@ const SalesManagement: React.FC = () => {
                       ))}
                     </select>
                   </div>
+
+                  {/* その他選択時の追加フィールド */}
+                  {formData.shipping_method === 'その他' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">発送タイプ</label>
+                      <input
+                        type="text"
+                        value={formData.custom_shipping_type}
+                        onChange={(e) => setFormData({ ...formData, custom_shipping_type: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="例：普通郵便、レターパック等"
+                        required
+                      />
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium mb-1">送料</label>
                     <input

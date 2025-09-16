@@ -55,6 +55,7 @@ const StorePurchaseDetail: React.FC = () => {
   const [showCustomSizeInput, setShowCustomSizeInput] = useState<boolean>(false);
   const [customCountry, setCustomCountry] = useState<string>('');
   const [showCustomCountryInput, setShowCustomCountryInput] = useState<boolean>(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_stock' | 'listed' | 'sold'>('all');
 
   // 基本色の選択肢（メルカリ表記に準拠）
   const basicColors = [
@@ -139,11 +140,12 @@ const StorePurchaseDetail: React.FC = () => {
 
   const fetchStorePurchaseDetail = async () => {
     try {
-      // まず store_purchases を取得
+      // セッションIDと店舗IDで store_purchases を取得
       const { data: purchaseData, error: purchaseError } = await supabase
         .from('store_purchases')
         .select('*')
-        .eq('id', storeId)
+        .eq('session_id', sessionId)
+        .eq('store_id', storeId)
         .single();
 
       if (purchaseError) throw purchaseError;
@@ -155,7 +157,7 @@ const StorePurchaseDetail: React.FC = () => {
       // 次に関連する店舗情報と商品を取得
       const [storeRes, productsRes] = await Promise.all([
         supabase.from('stores').select('*').eq('id', purchaseData.store_id).single(),
-        supabase.from('products').select('*').eq('store_purchase_id', storeId)
+        supabase.from('products').select('*').eq('store_purchase_id', purchaseData.id)
       ]);
 
       if (storeRes.error) throw storeRes.error;
@@ -370,39 +372,53 @@ const StorePurchaseDetail: React.FC = () => {
         const photosToSave = photoUrl ? [photoUrl] : existingValidPhotos;
         console.log('保存する写真URL (編集):', photosToSave);
         
+        const updatePayload = {
+          ...finalProductData,
+          photos: photosToSave,
+          measurements: finalProductData.measurements || null,
+          production_country: finalProductData.production_country || null,
+          decade: finalProductData.decade || '90s'
+        };
+
+        console.log('商品更新データ:', updatePayload);
+
         const { data: updateData, error } = await supabase
           .from('products')
-          .update({
-            ...finalProductData,
-            photos: photosToSave,
-            measurements: finalProductData.measurements || null,
-            production_country: finalProductData.production_country || null,
-            decade: finalProductData.decade || '90s'
-          })
+          .update(updatePayload)
           .eq('id', editingProduct.id)
           .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('商品更新エラー:', error);
+          throw error;
+        }
         console.log('更新結果:', updateData);
       } else {
         // 新規作成の場合
         const photosToSave = photoUrl ? [photoUrl] : [];
         console.log('保存する写真URL (新規):', photosToSave);
         
+        const insertPayload = {
+          ...finalProductData,
+          store_purchase_id: storePurchase?.id,
+          photos: photosToSave,
+          status: 'in_stock',
+          measurements: finalProductData.measurements || null,
+          production_country: finalProductData.production_country || null,
+          decade: finalProductData.decade || '90s'
+        };
+
+        console.log('商品挿入データ:', insertPayload);
+
         const { data: insertData, error } = await supabase
           .from('products')
-          .insert([{ 
-            ...finalProductData, 
-            store_purchase_id: storeId,
-            photos: photosToSave,
-            status: 'in_stock',
-            measurements: finalProductData.measurements || null,
-            production_country: finalProductData.production_country || null,
-            decade: finalProductData.decade || '90s'
-          }])
+          .insert([insertPayload])
           .select();
-        
-        if (error) throw error;
+
+        if (error) {
+          console.error('商品挿入エラー:', error);
+          throw error;
+        }
         console.log('挿入結果:', insertData);
       }
       
@@ -411,7 +427,8 @@ const StorePurchaseDetail: React.FC = () => {
       fetchStorePurchaseDetail();
     } catch (error) {
       console.error('Error saving product:', error);
-      alert('商品の保存に失敗しました');
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      alert(`商品の保存に失敗しました: ${errorMessage}`);
     }
   };
 
@@ -438,7 +455,8 @@ const StorePurchaseDetail: React.FC = () => {
       notes: product.notes || '',
       measurements: product.measurements || {},
       production_country: product.production_country || '',
-      decade: product.decade || '90s'
+      decade: product.decade || '90s',
+      asset_type: product.asset_type || 'quick_turn'
     });
     
     // カスタム色の場合はcustomColorに実際の色を設定
@@ -569,12 +587,12 @@ const StorePurchaseDetail: React.FC = () => {
   return (
     <div className="p-8 animate-fade-in">
       <div className="mb-8">
-        <Link 
-          to={`/purchases/${sessionId}`} 
+        <Link
+          to="/purchases"
           className="inline-flex items-center space-x-2 text-primary-600 hover:text-primary-700 mb-4"
         >
           <ArrowLeft size={20} />
-          <span>セッション詳細に戻る</span>
+          <span>セッション一覧に戻る</span>
         </Link>
         
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
@@ -666,17 +684,64 @@ const StorePurchaseDetail: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-          商品一覧
-        </h2>
-        <button
-          onClick={() => setShowProductForm(true)}
-          className="bg-gradient-to-r from-primary-500 to-primary-600 text-white px-6 py-3 rounded-xl flex items-center space-x-2 hover:shadow-lg transition-all duration-200 hover:scale-[1.02]"
-        >
-          <Plus size={20} />
-          <span>商品追加</span>
-        </button>
+      {/* ステータスタブとボタン */}
+      <div className="mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+            商品一覧
+          </h2>
+          <button
+            onClick={() => setShowProductForm(true)}
+            className="bg-gradient-to-r from-primary-500 to-primary-600 text-white px-6 py-3 rounded-xl flex items-center space-x-2 hover:shadow-lg transition-all duration-200 hover:scale-[1.02]"
+          >
+            <Plus size={20} />
+            <span>商品追加</span>
+          </button>
+        </div>
+
+        {/* ステータスフィルタータブ */}
+        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+              statusFilter === 'all'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            全て ({products.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('in_stock')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+              statusFilter === 'in_stock'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            登録中 ({products.filter(p => p.status === 'in_stock').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('listed')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+              statusFilter === 'listed'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            出品中 ({products.filter(p => p.status === 'listed').length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('sold')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+              statusFilter === 'sold'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            売約済 ({products.filter(p => p.status === 'sold').length})
+          </button>
+        </div>
       </div>
 
       {showProductForm && (
@@ -796,6 +861,7 @@ const StorePurchaseDetail: React.FC = () => {
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                   >
+                    <option value="">サイズを選択してください</option>
                     {basicSizes.map(size => (
                       <option key={size} value={size}>{size}</option>
                     ))}
@@ -807,6 +873,11 @@ const StorePurchaseDetail: React.FC = () => {
                       onChange={(e) => {
                         setCustomSize(e.target.value);
                         setProductFormData({ ...productFormData, size: e.target.value });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
                       }}
                       placeholder="サイズを入力"
                       className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -844,6 +915,11 @@ const StorePurchaseDetail: React.FC = () => {
                       value={customColor}
                       onChange={(e) => {
                         setCustomColor(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
                       }}
                       placeholder="カスタム色を入力"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mt-2"
@@ -1006,6 +1082,11 @@ const StorePurchaseDetail: React.FC = () => {
                               [field.key]: e.target.value ? parseFloat(e.target.value) : undefined
                             }
                           })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                            }
+                          }}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary-500"
                           placeholder="0"
                           min="0"
@@ -1025,6 +1106,7 @@ const StorePurchaseDetail: React.FC = () => {
                     onChange={(e) => setProductFormData({ ...productFormData, notes: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     rows={3}
+                    placeholder="内部用のメモや注意事項..."
                   />
                 </div>
               </div>
@@ -1052,87 +1134,111 @@ const StorePurchaseDetail: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {products.length === 0 ? (
-          <div className="col-span-full bg-white rounded-2xl shadow-lg p-8 text-center text-gray-500">
-            <Package className="mx-auto mb-4 text-gray-400" size={48} />
-            <p>まだ商品が登録されていません</p>
-          </div>
-        ) : (
-          products.map((product) => (
-            <div key={product.id} className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all duration-200">
-              <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl mb-4 flex items-center justify-center">
-                {product.photos && product.photos.length > 0 && product.photos[0] && !product.photos[0].startsWith('file://') ? (
-                  <img 
-                    src={product.photos[0]} 
-                    alt={product.name}
-                    className="w-full h-full object-cover rounded-xl"
-                  />
-                ) : (
-                  <Camera className="text-gray-400" size={48} />
-                )}
-              </div>
+      {/* 簡素化された商品リスト */}
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+        {(() => {
+          const filteredProducts = statusFilter === 'all'
+            ? products
+            : products.filter(p => p.status === statusFilter);
 
-              <div className="mb-4">
-                <h3 className="font-bold text-gray-900 mb-2 line-clamp-2">{product.name}</h3>
-                <div className="flex items-center justify-between mb-2">
-                  {product.brand && (
-                    <span className="text-sm text-gray-600">{product.brand}</span>
-                  )}
-                  {getStatusBadge(product.status)}
-                </div>
+          if (filteredProducts.length === 0) {
+            return (
+              <div className="p-8 text-center text-gray-500">
+                <Package className="mx-auto mb-4 text-gray-400" size={48} />
+                <p>
+                  {statusFilter === 'all'
+                    ? 'まだ商品が登録されていません'
+                    : `${statusFilter === 'in_stock' ? '登録中' : statusFilter === 'listed' ? '出品中' : '売約済'}の商品がありません`
+                  }
+                </p>
               </div>
+            );
+          }
 
-              <div className="space-y-2 text-sm mb-4">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">カテゴリー:</span>
-                  <span>{getCategoryLabel(product.category)}</span>
-                </div>
-                {product.size && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">サイズ:</span>
-                    <span>{product.size}</span>
+          return (
+            <div className="divide-y divide-gray-200">
+              {filteredProducts.map((product) => (
+                <div key={product.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
+                  <div className="flex items-center space-x-4">
+                    {/* 商品写真 */}
+                    <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                      {product.photos && product.photos.length > 0 && product.photos[0] && !product.photos[0].startsWith('file://') ? (
+                        <img
+                          src={product.photos[0]}
+                          alt={product.name}
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <Camera className="text-gray-400" size={24} />
+                      )}
+                    </div>
+
+                    {/* 商品情報 */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 truncate">{product.name}</h3>
+                          <div className="flex items-center space-x-2 mt-1">
+                            {product.brand && (
+                              <span className="text-sm text-gray-500">{product.brand}</span>
+                            )}
+                            <span className="text-sm text-gray-400">・</span>
+                            <span className="text-sm text-gray-500">{getCategoryLabel(product.category)}</span>
+                            {product.size && (
+                              <>
+                                <span className="text-sm text-gray-400">・</span>
+                                <span className="text-sm text-gray-500">{product.size}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-4 mt-2">
+                            {getStatusBadge(product.status)}
+                            <span className="text-sm font-medium text-green-600">¥{product.purchase_cost.toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        {/* アクションボタン */}
+                        <div className="flex items-center space-x-2 ml-4">
+                          <Link
+                            to={`/products/${product.id}`}
+                            className="p-2 text-gray-600 hover:text-primary-600 rounded-lg hover:bg-gray-100"
+                            title="詳細表示"
+                          >
+                            <Shirt size={16} />
+                          </Link>
+                          <button
+                            onClick={() => handleEditProduct(product)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              product.status === 'sold'
+                                ? 'text-gray-400 cursor-not-allowed'
+                                : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+                            }`}
+                            title="編集"
+                            disabled={product.status === 'sold'}
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              product.status === 'sold'
+                                ? 'text-gray-400 cursor-not-allowed'
+                                : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                            }`}
+                            title="削除"
+                            disabled={product.status === 'sold'}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-                {product.color && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">色:</span>
-                    <span>{product.color}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500">状態:</span>
-                  <span>{getConditionLabel(product.condition)}</span>
                 </div>
-                <div className="flex justify-between font-medium">
-                  <span className="text-gray-500">仕入価格:</span>
-                  <span className="text-green-600">¥{product.purchase_cost.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                <Link
-                  to={`/products/${product.id}`}
-                  className="p-2 text-gray-600 hover:text-primary-600 rounded-lg hover:bg-gray-100"
-                >
-                  <Shirt size={18} />
-                </Link>
-                <button 
-                  onClick={() => handleEditProduct(product)}
-                  className="p-2 text-gray-600 hover:text-blue-600 rounded-lg hover:bg-gray-100"
-                >
-                  <Edit size={18} />
-                </button>
-                <button 
-                  onClick={() => handleDeleteProduct(product.id)}
-                  className="p-2 text-gray-600 hover:text-red-600 rounded-lg hover:bg-gray-100"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
+              ))}
             </div>
-          ))
-        )}
+          );
+        })()}
       </div>
 
       {remainingItems > 0 && (
