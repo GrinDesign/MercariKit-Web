@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Filter, Search, X, Save, Check, Edit } from 'lucide-react';
+import { Package, Filter, Search, X, Save, Check, Edit, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types/index';
 import { getProductDescriptionTemplate } from '../templates/productDescriptionTemplate';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import '../styles/datepicker.css';
+import { ja } from 'date-fns/locale';
+
+registerLocale('ja', ja);
 
 const ListingManagement: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -25,6 +31,7 @@ const ListingManagement: React.FC = () => {
     shipping_cost: 215
   });
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [fixingStatus, setFixingStatus] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -36,27 +43,117 @@ const ListingManagement: React.FC = () => {
 
   const fetchProducts = async () => {
     try {
-      const { data, error } = await supabase
+      // まず全商品のステータスを確認
+      const { data: allProducts, error: allError } = await supabase
         .from('products')
-        .select(`
-          *,
-          store_purchases!store_purchase_id (
-            stores (
-              name
-            )
-          )
-        `)
+        .select('id, status, name, created_at')
+        .order('created_at', { ascending: false });
+
+      console.log('=== デバッグ情報 ===');
+      console.log('All products in DB:', allProducts);
+      console.log('Total products in DB:', allProducts?.length || 0);
+
+      // ステータス別に分類
+      const statusBreakdown = allProducts?.reduce((acc: any, prod: any) => {
+        acc[prod.status] = (acc[prod.status] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('Status breakdown of all products:', statusBreakdown);
+
+      // in_stock商品の詳細
+      const inStockProducts = allProducts?.filter((p: any) => p.status === 'in_stock');
+      console.log('In stock products:', inStockProducts);
+
+      // in_stock と ready_to_list のみ取得
+      console.log('Fetching products with status in_stock or ready_to_list...');
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('*')
         .in('status', ['in_stock', 'ready_to_list'])
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      
+      if (error) {
+        console.error('Query error:', error);
+        throw error;
+      }
+
+      // 関連データを別途取得（store_purchase_idがある商品のみ）
+      const data = products;
+      if (products && products.length > 0) {
+        const productsWithStorePurchaseId = products.filter(p => p.store_purchase_id);
+        const storePurchaseIds = [...new Set(productsWithStorePurchaseId.map(p => p.store_purchase_id))];
+
+        if (storePurchaseIds.length > 0) {
+          // store_purchasesデータを取得
+          const { data: storePurchases, error: spError } = await supabase
+            .from('store_purchases')
+            .select(`
+              id,
+              store_id,
+              session_id,
+              purchase_date,
+              product_cost,
+              shipping_cost,
+              commission_fee,
+              item_count,
+              price_input_mode,
+              stores (
+                name
+              )
+            `)
+            .in('id', storePurchaseIds);
+
+          if (!spError && storePurchases) {
+            // セッションIDを取得
+            const sessionIds = [...new Set(storePurchases.map(sp => sp.session_id).filter(id => id))];
+
+            let sessions: any[] = [];
+            if (sessionIds.length > 0) {
+              const { data: sessionsData, error: sessionError } = await supabase
+                .from('purchase_sessions')
+                .select('id, transportation_cost, transfer_fee, agency_fee')
+                .in('id', sessionIds);
+
+              if (!sessionError && sessionsData) {
+                sessions = sessionsData;
+              }
+            }
+
+            // データを結合
+            products.forEach(product => {
+              if (product.store_purchase_id) {
+                const storePurchase = storePurchases.find(sp => sp.id === product.store_purchase_id);
+                if (storePurchase) {
+                  const session = sessions.find(s => s.id === storePurchase.session_id);
+                  product.store_purchases = {
+                    ...storePurchase,
+                    purchase_sessions: session || null
+                  };
+                }
+              }
+            });
+          }
+        }
+      }
+
       console.log('Fetched products for listing:', data); // デバッグログ
       console.log('Total products found:', data?.length || 0); // デバッグログ
-      
+
+      // ステータス別の商品数を表示
+      const statusCounts: { [key: string]: number } = {};
+      data?.forEach((product: any) => {
+        statusCounts[product.status] = (statusCounts[product.status] || 0) + 1;
+      });
+      console.log('Product status distribution:', statusCounts);
+
       setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        error: error
+      });
+      alert(`エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`);
     } finally {
       setLoading(false);
     }
@@ -186,6 +283,82 @@ const ListingManagement: React.FC = () => {
     return labels[condition] || condition;
   };
 
+  // 実際の仕入コストを計算
+  const calculateActualCost = (product: any): number => {
+    // 基本の仕入価格
+    let cost = product.purchase_cost || 0;
+
+    if (!product.store_purchases) {
+      return cost;
+    }
+
+    const storePurchase = product.store_purchases;
+    const session = storePurchase.purchase_sessions;
+
+    // 共通経費の計算
+    let commonExpenses = 0;
+    if (session) {
+      commonExpenses = (session.transportation_cost || 0) +
+                      (session.transfer_fee || 0) +
+                      (session.agency_fee || 0);
+    }
+
+    // 店舗購入時の経費
+    const storeExpenses = (storePurchase.shipping_cost || 0) +
+                          (storePurchase.commission_fee || 0);
+
+    if (storePurchase.price_input_mode === 'batch') {
+      // 一括価格の場合：商品単価 + 店舗経費の按分 + 共通経費の按分
+      const itemCount = storePurchase.item_count || 1;
+      const perItemStoreExpense = storeExpenses / itemCount;
+
+      // セッション内の全商品数を考慮した按分（簡易版）
+      // 実際には全商品数を取得する必要があるが、ここでは店舗の商品数で代用
+      const perItemCommonExpense = commonExpenses / itemCount;
+
+      cost = product.purchase_cost + perItemStoreExpense + perItemCommonExpense;
+    } else {
+      // 個別価格の場合：仕入価格 + 経費 + 共通経費の按分
+      const itemCount = storePurchase.item_count || 1;
+      const perItemCommonExpense = commonExpenses / itemCount;
+
+      cost = product.purchase_cost + perItemCommonExpense;
+    }
+
+    return Math.round(cost);
+  };
+
+  // ステータスがnullの商品を修正
+  const fixNullStatus = async () => {
+    setFixingStatus(true);
+    try {
+      const { data: nullStatusProducts, error: fetchError } = await supabase
+        .from('products')
+        .select('id')
+        .is('status', null);
+
+      if (fetchError) throw fetchError;
+
+      if (nullStatusProducts && nullStatusProducts.length > 0) {
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ status: 'in_stock' })
+          .is('status', null);
+
+        if (updateError) throw updateError;
+
+        alert(`${nullStatusProducts.length}件の商品のステータスをin_stockに更新しました`);
+        fetchProducts();
+      } else {
+        alert('ステータスがnullの商品はありません');
+      }
+    } catch (error) {
+      console.error('Error fixing null status:', error);
+      alert('ステータスの修正に失敗しました');
+    } finally {
+      setFixingStatus(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -201,8 +374,20 @@ const ListingManagement: React.FC = () => {
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">出品準備</h1>
-        <p className="text-gray-600">商品の出品準備と管理を行います</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">出品準備</h1>
+            <p className="text-gray-600">商品の出品準備と管理を行います</p>
+          </div>
+          {/* デバッグ用ボタン */}
+          <button
+            onClick={fixNullStatus}
+            disabled={fixingStatus}
+            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50"
+          >
+            {fixingStatus ? '修正中...' : 'ステータス修正'}
+          </button>
+        </div>
       </div>
 
 
@@ -334,7 +519,7 @@ const ListingManagement: React.FC = () => {
                     <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <span className="text-gray-500">仕入価格:</span>
-                        <span className="ml-1 font-medium">¥{product.purchase_cost.toLocaleString()}</span>
+                        <span className="ml-1 font-medium">¥{calculateActualCost(product).toLocaleString()}</span>
                       </div>
                       {product.current_price > 0 && (
                         <div>
@@ -743,12 +928,34 @@ const ListingManagement: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     出品日
                   </label>
-                  <input
-                    type="date"
-                    value={listingFormData.listed_at}
-                    onChange={(e) => setListingFormData({ ...listingFormData, listed_at: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
+                  <div className="relative">
+                    <DatePicker
+                      selected={listingFormData.listed_at ? new Date(listingFormData.listed_at + 'T00:00:00') : null}
+                      onChange={(date: Date | null) => {
+                        if (date) {
+                          const year = date.getFullYear();
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const day = String(date.getDate()).padStart(2, '0');
+                          setListingFormData({
+                            ...listingFormData,
+                            listed_at: `${year}-${month}-${day}`
+                          });
+                        } else {
+                          setListingFormData({
+                            ...listingFormData,
+                            listed_at: ''
+                          });
+                        }
+                      }}
+                      dateFormat="yyyy/MM/dd"
+                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholderText="日付を選択"
+                      isClearable
+                      showPopperArrow={false}
+                      locale="ja"
+                    />
+                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
                     出品日を設定すると自動的に「出品済み」ステータスになります
                   </p>
@@ -772,17 +979,25 @@ const ListingManagement: React.FC = () => {
                         <span className="text-red-600">-¥{listingFormData.shipping_cost.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">仕入価格:</span>
-                        <span className="text-red-600">-¥{selectedProduct.purchase_cost.toLocaleString()}</span>
+                        <span className="text-gray-600">実際の仕入コスト:</span>
+                        <span className="text-red-600">-¥{calculateActualCost(selectedProduct).toLocaleString()}</span>
                       </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span className="pl-4">└ 内訳: 商品価格 ¥{selectedProduct.purchase_cost.toLocaleString()}</span>
+                      </div>
+                      {selectedProduct.store_purchases && (
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span className="pl-4">└ 経費按分含む</span>
+                        </div>
+                      )}
                       <div className="flex justify-between border-t pt-2 font-medium">
                         <span>予想利益:</span>
                         <span className={`${
-                          listingFormData.current_price * 0.9 - listingFormData.shipping_cost - selectedProduct.purchase_cost >= 0
+                          listingFormData.current_price * 0.9 - listingFormData.shipping_cost - calculateActualCost(selectedProduct) >= 0
                             ? 'text-green-600'
                             : 'text-red-600'
                         }`}>
-                          ¥{Math.floor(listingFormData.current_price * 0.9 - listingFormData.shipping_cost - selectedProduct.purchase_cost).toLocaleString()}
+                          ¥{Math.floor(listingFormData.current_price * 0.9 - listingFormData.shipping_cost - calculateActualCost(selectedProduct)).toLocaleString()}
                         </span>
                       </div>
                     </div>

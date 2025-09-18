@@ -56,16 +56,23 @@ MercariKitは中古品販売事業者向けの包括的な販売管理システ�
 
 - **Frontend**: React 18 + TypeScript + Vite
 - **Backend**: Supabase (PostgreSQL)
-- **UI**: Tailwind CSS + Lucide Icons
-- **State Management**: React Hooks (useState, useEffect)
+- **Authentication**: Supabase Auth (Google OAuth)
+- **UI**: Tailwind CSS + Lucide Icons + react-datepicker
+- **Security**: Row Level Security (RLS)
+- **State Management**: React Context API + Hooks
 
 ## データベース構造
 
 ### 主要テーブル
 - `products` - 商品情報
 - `store_purchases` - 店舗購入情報
-- `purchase_sessions` - 購入セッション
-- `stores` - 店舗マスタ
+- `purchase_sessions` - 購入セッション（user_id付き）
+- `stores` - 店舗マスタ（user_id付き）
+
+### マルチテナント対応
+- **Row Level Security (RLS)**: ユーザーごとのデータアクセス制御
+- **user_id**: 認証ユーザーとの紐付け
+- **セキュアなデータ分離**: ユーザー間でのデータ完全分離
 
 ### 商品ステータス
 - `in_stock` - 在庫中
@@ -160,7 +167,14 @@ src/
 
 ## 開発履歴
 
-### v2.9.0（最新）
+### v3.0.0（最新）
+- **🔐 Google認証機能実装**: ユーザーごとのセキュアなアクセス制御
+- **🛡️ Row Level Security対応**: データベースレベルでの権限管理
+- **👤 マルチテナント対応**: 複数ユーザーでの安全なデータ共有防止
+- **📅 日付選択改善**: react-datepicker導入で使いやすいカレンダーUI
+- **💰 仕入コスト計算精度向上**: 経費按分を含む実際のコスト表示
+
+### v2.9.0
 - **商品詳細画面実装**: 商品の全情報を一覧表示、コピー機能付き
 - **商品編集機能強化**: 詳細画面から直接編集画面へ遷移
 - **配送管理機能追加**: 予定配送と実際の配送情報を分離管理

@@ -13,13 +13,17 @@ import {
   DollarSign,
   ChevronRight,
   Sparkles,
-  FileSpreadsheet
+  FileSpreadsheet,
+  LogOut,
+  User
 } from 'lucide-react';
 import FloatingHomeButton from './FloatingHomeButton';
+import { useAuth } from '../contexts/AuthContext';
 
 const Layout: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   const menuItems = [
     { path: '/', icon: Home, label: 'ホーム', color: 'from-blue-500 to-cyan-500' },
@@ -115,7 +119,47 @@ const Layout: React.FC = () => {
           </ul>
         </nav>
 
-        <div className="p-4 border-t border-gray-200/50">
+        <div className="p-4 border-t border-gray-200/50 space-y-3">
+          {/* ユーザー情報 */}
+          {user && (
+            <div className={`${isSidebarOpen ? 'block' : 'hidden'}`}>
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-xl">
+                <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 一時的な認証テスト用ボタン */}
+          {!user && isSidebarOpen && (
+            <div className="mb-3">
+              <Link
+                to="/auth"
+                className="w-full flex items-center px-4 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors"
+              >
+                <span className="font-medium">ログインページ</span>
+              </Link>
+            </div>
+          )}
+
+          {/* ログアウトボタン */}
+          <button
+            onClick={signOut}
+            className={`w-full flex items-center ${isSidebarOpen ? 'px-4' : 'px-3 justify-center'} py-3 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all duration-200 group`}
+          >
+            <LogOut size={20} className="text-gray-500 group-hover:text-red-600" />
+            {isSidebarOpen && (
+              <span className="ml-3 font-medium">ログアウト</span>
+            )}
+          </button>
+
+          {/* システム情報 */}
           {isSidebarOpen ? (
             <div className="bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl p-4">
               <div className="flex items-center space-x-2 mb-2">

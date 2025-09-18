@@ -375,6 +375,7 @@ const StorePurchaseDetail: React.FC = () => {
         const updatePayload = {
           ...finalProductData,
           photos: photosToSave,
+          status: editingProduct.status || 'in_stock', // ステータスを保持、なければin_stockに設定
           measurements: finalProductData.measurements || null,
           production_country: finalProductData.production_country || null,
           decade: finalProductData.decade || '90s'
